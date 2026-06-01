@@ -20,7 +20,7 @@ app.use(securityHeaders);
 app.use(cors({
   origin: [
       "http://localhost:5173",
-      "https://golden-castle-school-api.onrender.com/api",
+      "https://golden-castle-school.vercel.app",
     ],
   credentials: true
 }));
