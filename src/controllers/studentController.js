@@ -20,6 +20,7 @@ const registerStudent = async (req, res) => {
       full_name,
       admission_no,
       class: studentClass,
+      current_session,
       gender,
       password
     } = req.body;
@@ -40,12 +41,19 @@ const registerStudent = async (req, res) => {
       });
     }
 
+    if (!current_session) {
+      return res.status(400).json({
+        message: "Current session is required"
+      });
+    }
+
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const student = await Student.create({
       full_name,
       admission_no,
       class: studentClass,
+      current_session,
       gender,
       password: hashedPassword
     });
@@ -80,6 +88,7 @@ const updateStudent = async (req, res) => {
       full_name,
       admission_no,
       class: studentClass,
+      current_session,
       gender,
       password
     } = req.body;
@@ -110,6 +119,7 @@ const updateStudent = async (req, res) => {
     student.full_name = full_name || student.full_name;
     student.admission_no = admission_no || student.admission_no;
     student.class = studentClass || student.class;
+    student.current_session = current_session || student.current_session;
     student.gender = gender || student.gender;
 
     if (password) {
@@ -159,9 +169,58 @@ const deleteStudent = async (req, res) => {
   }
 };
 
+const promoteStudentsByClass = async (req, res) => {
+  try {
+    const {
+      fromClass,
+      toClass,
+      fromSession,
+      toSession
+    } = req.body;
+
+    if (!fromClass || !toClass || !fromSession || !toSession) {
+      return res.status(400).json({
+        message: "From class, to class, from session, and to session are required"
+      });
+    }
+
+    if (
+      fromClass.trim().toLowerCase() === toClass.trim().toLowerCase() &&
+      fromSession.trim() === toSession.trim()
+    ) {
+      return res.status(400).json({
+        message: "Promotion target must be different from the current class or session"
+      });
+    }
+
+    const promotionResult = await Student.updateMany(
+      {
+        class: fromClass,
+        current_session: fromSession
+      },
+      {
+        class: toClass,
+        current_session: toSession
+      }
+    );
+
+    res.json({
+      message: `${promotionResult.modifiedCount} student(s) promoted successfully.`,
+      matchedCount: promotionResult.matchedCount,
+      modifiedCount: promotionResult.modifiedCount
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   registerStudent,
   getAllStudents,
   updateStudent,
-  deleteStudent
+  deleteStudent,
+  promoteStudentsByClass
 };

@@ -6,7 +6,8 @@ const {
   registerStudent,
   getAllStudents,
   updateStudent,
-  deleteStudent
+  deleteStudent,
+  promoteStudentsByClass
 } = require("../controllers/studentController");
 
 const protect = require("../middleware/authMiddleware");
@@ -19,6 +20,9 @@ router.post("/", protect, authorizeRoles("admin"), registerStudent);
 
 // ONLY ADMIN CAN VIEW ALL STUDENTS
 router.get("/", protect, authorizeRoles("admin"), getAllStudents);
+
+// ONLY ADMIN CAN PROMOTE STUDENTS BY CLASS
+router.post("/promote", protect, authorizeRoles("admin"), promoteStudentsByClass);
 
 // ONLY ADMIN CAN UPDATE STUDENTS
 router.put("/:id", protect, authorizeRoles("admin"), updateStudent);

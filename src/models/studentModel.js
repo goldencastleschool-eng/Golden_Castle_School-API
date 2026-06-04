@@ -18,6 +18,11 @@ const studentSchema = new mongoose.Schema(
       required: true
     },
 
+    current_session: {
+      type: String,
+      required: true
+    },
+
     gender: {
       type: String
     },

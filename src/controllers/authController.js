@@ -89,6 +89,7 @@ const studentLogin = async (req, res) => {
         full_name: student.full_name,
         admission_no: student.admission_no,
         class: student.class,
+        current_session: student.current_session,
       },
     });
   } catch (error) {
