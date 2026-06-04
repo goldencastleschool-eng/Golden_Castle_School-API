@@ -1,58 +1,31 @@
 const jwt = require("jsonwebtoken");
 
-const getCookieToken = (cookieHeader = "") => {
-  return cookieHeader
-    .split(";")
-    .map((cookie) => cookie.trim())
-    .find((cookie) => cookie.startsWith("auth_token="))
-    ?.split("=")[1];
-};
-
 const protect = (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
 
-  let token;
-
-  if (
-    req.headers.authorization &&
-    req.headers.authorization.startsWith("Bearer")
-  ) {
-
-    try {
-
-      token = req.headers.authorization.split(" ")[1];
-
-    } catch (error) {
-
+    if (
+      !authHeader ||
+      !authHeader.startsWith("Bearer ")
+    ) {
       return res.status(401).json({
-        message: "Not authorized"
+        message: "No token provided",
       });
     }
 
-  }
+    const token = authHeader.split(" ")[1];
 
-  if (!token) {
-    token = getCookieToken(req.headers.cookie);
-  }
-
-  if (!token) {
-    return res.status(401).json({
-      message: "No token provided"
-    });
-  }
-
-  try {
     const decoded = jwt.verify(
-      decodeURIComponent(token),
+      token,
       process.env.JWT_SECRET
     );
 
     req.user = decoded;
 
-    return next();
-
+    next();
   } catch (error) {
     return res.status(401).json({
-      message: "Not authorized"
+      message: "Not authorized",
     });
   }
 };
