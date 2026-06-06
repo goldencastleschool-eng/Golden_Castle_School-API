@@ -4,6 +4,14 @@ const Student = require("../models/studentModel");
 
 const Result = require("../models/resultModel");
 
+const Class = require("../models/classModel");
+
+const {
+  ensureClassRecord,
+  normalizeClassName,
+  normalizeSession
+} = require("../utils/classRecords");
+
 const sanitizeStudent = (student) => {
   const safeStudent = student.toObject
     ? student.toObject()
@@ -20,6 +28,7 @@ const registerStudent = async (req, res) => {
       full_name,
       admission_no,
       class: studentClass,
+      class_record,
       current_session,
       gender,
       password
@@ -47,13 +56,27 @@ const registerStudent = async (req, res) => {
       });
     }
 
+    const previousClass = student.class;
+    const previousSession = student.current_session;
+
+    const selectedClass = class_record
+      ? await Class.findById(class_record)
+      : await ensureClassRecord(studentClass, current_session);
+
+    if (!selectedClass) {
+      return res.status(400).json({
+        message: "Class and session are required"
+      });
+    }
+
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const student = await Student.create({
       full_name,
       admission_no,
-      class: studentClass,
-      current_session,
+      class: selectedClass.name,
+      class_record: selectedClass._id,
+      current_session: selectedClass.session,
       gender,
       password: hashedPassword
     });
@@ -69,9 +92,12 @@ const registerStudent = async (req, res) => {
 
 const getAllStudents = async (req, res) => {
   try {
-    const students = await Student.find().select("-password").sort({
-      createdAt: -1
-    });
+    const students = await Student.find()
+      .select("-password")
+      .populate("class_record")
+      .sort({
+        createdAt: -1
+      });
 
     res.json(students);
 
@@ -88,6 +114,7 @@ const updateStudent = async (req, res) => {
       full_name,
       admission_no,
       class: studentClass,
+      class_record,
       current_session,
       gender,
       password
@@ -116,10 +143,26 @@ const updateStudent = async (req, res) => {
       }
     }
 
+    const selectedClass = class_record
+      ? await Class.findById(class_record)
+      : studentClass || current_session
+        ? await ensureClassRecord(
+            studentClass || student.class,
+            current_session || student.current_session
+          )
+        : null;
+
+    if ((class_record || studentClass || current_session) && !selectedClass) {
+      return res.status(400).json({
+        message: "Class and session are required"
+      });
+    }
+
     student.full_name = full_name || student.full_name;
     student.admission_no = admission_no || student.admission_no;
-    student.class = studentClass || student.class;
-    student.current_session = current_session || student.current_session;
+    student.class = selectedClass?.name || student.class;
+    student.class_record = selectedClass?._id || student.class_record;
+    student.current_session = selectedClass?.session || student.current_session;
     student.gender = gender || student.gender;
 
     if (password) {
@@ -129,8 +172,15 @@ const updateStudent = async (req, res) => {
     const updatedStudent = await student.save();
 
     await Result.updateMany(
-      { student: updatedStudent._id },
-      { class: updatedStudent.class }
+      {
+        student: updatedStudent._id,
+        class: previousClass,
+        session: previousSession
+      },
+      {
+        class: updatedStudent.class,
+        session: updatedStudent.current_session
+      }
     );
 
     res.json(sanitizeStudent(updatedStudent));
@@ -175,19 +225,35 @@ const promoteStudentsByClass = async (req, res) => {
       fromClass,
       toClass,
       fromSession,
-      toSession
+      toSession,
+      fromClassRecord,
+      toClassRecord
     } = req.body;
 
-    if (!fromClass || !toClass || !fromSession || !toSession) {
+    if (
+      (!fromClassRecord && (!fromClass || !fromSession)) ||
+      (!toClassRecord && (!toClass || !toSession))
+    ) {
       return res.status(400).json({
         message: "From class, to class, from session, and to session are required"
       });
     }
 
-    if (
-      fromClass.trim().toLowerCase() === toClass.trim().toLowerCase() &&
-      fromSession.trim() === toSession.trim()
-    ) {
+    const sourceClass = fromClassRecord
+      ? await Class.findById(fromClassRecord)
+      : await ensureClassRecord(fromClass, fromSession);
+
+    const targetClass = toClassRecord
+      ? await Class.findById(toClassRecord)
+      : await ensureClassRecord(toClass, toSession);
+
+    if (!sourceClass || !targetClass) {
+      return res.status(400).json({
+        message: "Source and target class records are required"
+      });
+    }
+
+    if (sourceClass._id.toString() === targetClass._id.toString()) {
       return res.status(400).json({
         message: "Promotion target must be different from the current class or session"
       });
@@ -195,19 +261,26 @@ const promoteStudentsByClass = async (req, res) => {
 
     const promotionResult = await Student.updateMany(
       {
-        class: fromClass,
-        current_session: fromSession
+        $or: [
+          { class_record: sourceClass._id },
+          {
+            class: normalizeClassName(sourceClass.name),
+            current_session: normalizeSession(sourceClass.session)
+          }
+        ]
       },
       {
-        class: toClass,
-        current_session: toSession
+        class: targetClass.name,
+        class_record: targetClass._id,
+        current_session: targetClass.session
       }
     );
 
     res.json({
-      message: `${promotionResult.modifiedCount} student(s) promoted successfully.`,
+      message: `${promotionResult.modifiedCount} student(s) moved to ${targetClass.name.toUpperCase()} for ${targetClass.session}.`,
       matchedCount: promotionResult.matchedCount,
-      modifiedCount: promotionResult.modifiedCount
+      modifiedCount: promotionResult.modifiedCount,
+      classRecord: targetClass
     });
 
   } catch (error) {

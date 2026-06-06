@@ -4,45 +4,21 @@ const Student = require("../models/studentModel");
 
 const Result = require("../models/resultModel");
 
-const normalizeClassName = (name = "") =>
-  name.toString().trim().toLowerCase().replace(/\s+/g, "");
-
-const defaultClasses = [
-  "pg-1",
-  "pg-2",
-  "nur-1",
-  "nur-2",
-  "nur-3",
-  "basic-1",
-  "basic-2",
-  "basic-3",
-  "basic-4",
-  "basic-5",
-  "jss-1a",
-  "jss1b",
-  "jss2a",
-  "jss3",
-  "ss1",
-  "ss2art",
-  "ss2scienc"
-];
-
-const seedDefaultClasses = async () => {
-  const classCount = await Class.countDocuments();
-
-  if (classCount === 0) {
-    await Class.insertMany(
-      defaultClasses.map((name) => ({ name })),
-      { ordered: false }
-    );
-  }
-};
+const {
+  ensureClassRecord,
+  normalizeClassName,
+  normalizeSession,
+  syncLegacyClassesToDynamicRecords
+} = require("../utils/classRecords");
 
 const getClasses = async (req, res) => {
   try {
-    await seedDefaultClasses();
+    await syncLegacyClassesToDynamicRecords();
 
-    const classes = await Class.find().sort({
+    const classes = await Class.find({
+      session: { $exists: true, $ne: "" }
+    }).sort({
+      session: -1,
       name: 1
     });
 
@@ -58,6 +34,7 @@ const getClasses = async (req, res) => {
 const createClass = async (req, res) => {
   try {
     const name = normalizeClassName(req.body.name);
+    const session = normalizeSession(req.body.session);
 
     if (!name) {
       return res.status(400).json({
@@ -65,15 +42,24 @@ const createClass = async (req, res) => {
       });
     }
 
-    const existingClass = await Class.findOne({ name });
-
-    if (existingClass) {
+    if (!session) {
       return res.status(400).json({
-        message: "Class already exists"
+        message: "Session is required"
       });
     }
 
-    const classRecord = await Class.create({ name });
+    const existingClass = await Class.findOne({
+      name,
+      session
+    });
+
+    if (existingClass) {
+      return res.status(400).json({
+        message: "Class already exists for this session"
+      });
+    }
+
+    const classRecord = await ensureClassRecord(name, session);
 
     res.status(201).json(classRecord);
 
@@ -87,10 +73,17 @@ const createClass = async (req, res) => {
 const updateClass = async (req, res) => {
   try {
     const name = normalizeClassName(req.body.name);
+    const session = normalizeSession(req.body.session);
 
     if (!name) {
       return res.status(400).json({
         message: "Class name is required"
+      });
+    }
+
+    if (!session) {
+      return res.status(400).json({
+        message: "Session is required"
       });
     }
 
@@ -102,29 +95,52 @@ const updateClass = async (req, res) => {
       });
     }
 
-    const existingClass = await Class.findOne({ name });
+    const existingClass = await Class.findOne({
+      name,
+      session
+    });
 
     if (
       existingClass &&
       existingClass._id.toString() !== classRecord._id.toString()
     ) {
       return res.status(400).json({
-        message: "Class already exists"
+        message: "Class already exists for this session"
       });
     }
 
     const oldName = classRecord.name;
+    const oldSession = classRecord.session;
     classRecord.name = name;
+    classRecord.session = session;
     const updatedClass = await classRecord.save();
 
     await Student.updateMany(
-      { class: oldName },
-      { class: name }
+      {
+        $or: [
+          { class_record: classRecord._id },
+          {
+            class: oldName,
+            current_session: oldSession
+          }
+        ]
+      },
+      {
+        class: name,
+        current_session: session,
+        class_record: classRecord._id
+      }
     );
 
     await Result.updateMany(
-      { class: oldName },
-      { class: name }
+      {
+        class: oldName,
+        session: oldSession
+      },
+      {
+        class: name,
+        session
+      }
     );
 
     res.json(updatedClass);
@@ -147,11 +163,18 @@ const deleteClass = async (req, res) => {
     }
 
     const studentCount = await Student.countDocuments({
-      class: classRecord.name
+      $or: [
+        { class_record: classRecord._id },
+        {
+          class: classRecord.name,
+          current_session: classRecord.session
+        }
+      ]
     });
 
     const resultCount = await Result.countDocuments({
-      class: classRecord.name
+      class: classRecord.name,
+      session: classRecord.session
     });
 
     if (studentCount > 0 || resultCount > 0) {

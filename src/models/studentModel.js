@@ -18,6 +18,11 @@ const studentSchema = new mongoose.Schema(
       required: true
     },
 
+    class_record: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Class"
+    },
+
     current_session: {
       type: String,
       required: true
