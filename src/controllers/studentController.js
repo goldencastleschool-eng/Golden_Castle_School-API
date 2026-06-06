@@ -56,9 +56,6 @@ const registerStudent = async (req, res) => {
       });
     }
 
-    const previousClass = student.class;
-    const previousSession = student.current_session;
-
     const selectedClass = class_record
       ? await Class.findById(class_record)
       : await ensureClassRecord(studentClass, current_session);
@@ -142,6 +139,9 @@ const updateStudent = async (req, res) => {
         });
       }
     }
+
+    const previousClass = student.class;
+    const previousSession = student.current_session;
 
     const selectedClass = class_record
       ? await Class.findById(class_record)
