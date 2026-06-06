@@ -10,12 +10,17 @@ const resultAccessSchema = new mongoose.Schema(
 
     session: {
       type: String,
-      required: true
+      default: ""
     },
 
     term: {
       type: String,
-      required: true
+      default: ""
+    },
+
+    cumulative_session: {
+      type: String,
+      default: ""
     }
   },
   {

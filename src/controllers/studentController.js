@@ -227,7 +227,8 @@ const promoteStudentsByClass = async (req, res) => {
       fromSession,
       toSession,
       fromClassRecord,
-      toClassRecord
+      toClassRecord,
+      studentIds = []
     } = req.body;
 
     if (
@@ -259,16 +260,27 @@ const promoteStudentsByClass = async (req, res) => {
       });
     }
 
+    const sourceClassQuery = {
+      $or: [
+        { class_record: sourceClass._id },
+        {
+          class: normalizeClassName(sourceClass.name),
+          current_session: normalizeSession(sourceClass.session)
+        }
+      ]
+    };
+
+    const selectedStudentIds = Array.isArray(studentIds)
+      ? studentIds.filter(Boolean)
+      : [];
+
     const promotionResult = await Student.updateMany(
-      {
-        $or: [
-          { class_record: sourceClass._id },
-          {
-            class: normalizeClassName(sourceClass.name),
-            current_session: normalizeSession(sourceClass.session)
+      selectedStudentIds.length > 0
+        ? {
+            _id: { $in: selectedStudentIds },
+            ...sourceClassQuery
           }
-        ]
-      },
+        : sourceClassQuery,
       {
         class: targetClass.name,
         class_record: targetClass._id,
@@ -280,6 +292,7 @@ const promoteStudentsByClass = async (req, res) => {
       message: `${promotionResult.modifiedCount} student(s) moved to ${targetClass.name.toUpperCase()} for ${targetClass.session}.`,
       matchedCount: promotionResult.matchedCount,
       modifiedCount: promotionResult.modifiedCount,
+      selectedCount: selectedStudentIds.length,
       classRecord: targetClass
     });
 

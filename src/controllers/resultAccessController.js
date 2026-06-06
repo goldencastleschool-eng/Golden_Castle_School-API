@@ -12,7 +12,8 @@ const getResultAccess = async (req, res) => {
       access || {
         key: ACCESS_KEY,
         session: "",
-        term: ""
+        term: "",
+        cumulative_session: ""
       }
     );
 
@@ -33,12 +34,59 @@ const updateResultAccess = async (req, res) => {
       });
     }
 
+    const existingAccess = await ResultAccess.findOne({
+      key: ACCESS_KEY
+    });
+
     const access = await ResultAccess.findOneAndUpdate(
       { key: ACCESS_KEY },
       {
         key: ACCESS_KEY,
         session,
-        term
+        term,
+        cumulative_session: existingAccess?.cumulative_session || ""
+      },
+      {
+        new: true,
+        upsert: true
+      }
+    );
+
+    res.json(access);
+
+  } catch (error) {
+    res.status(500).json({
+      error: error.message
+    });
+  }
+};
+
+const updateCumulativeResultAccess = async (req, res) => {
+  try {
+    const {
+      cumulative_session,
+      session
+    } = req.body;
+
+    const approvedSession = cumulative_session || session;
+
+    if (!approvedSession) {
+      return res.status(400).json({
+        message: "Cumulative result session is required"
+      });
+    }
+
+    const existingAccess = await ResultAccess.findOne({
+      key: ACCESS_KEY
+    });
+
+    const access = await ResultAccess.findOneAndUpdate(
+      { key: ACCESS_KEY },
+      {
+        key: ACCESS_KEY,
+        session: existingAccess?.session || "",
+        term: existingAccess?.term || "",
+        cumulative_session: approvedSession
       },
       {
         new: true,
@@ -58,5 +106,6 @@ const updateResultAccess = async (req, res) => {
 module.exports = {
   getResultAccess,
   updateResultAccess,
+  updateCumulativeResultAccess,
   ACCESS_KEY
 };

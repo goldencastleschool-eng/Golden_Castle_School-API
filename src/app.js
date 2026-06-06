@@ -6,6 +6,7 @@ const studentRoutes = require("./routes/studentRoutes");
 const classRoutes = require("./routes/classRoutes");
 const authRoutes = require("./routes/authRoutes");
 const resultRoutes = require("./routes/resultRoutes");
+const cumulativeResultRoutes = require("./routes/cumulativeResultRoutes");
 const resultAccessRoutes = require("./routes/resultAccessRoutes");
 
 const securityHeaders = (req, res, next) => {
@@ -39,6 +40,7 @@ app.use('/api/students', studentRoutes);
 app.use('/api/classes', classRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/results', resultRoutes);
+app.use('/api/cumulative-results', cumulativeResultRoutes);
 app.use('/api/result-access', resultAccessRoutes);
 
 
