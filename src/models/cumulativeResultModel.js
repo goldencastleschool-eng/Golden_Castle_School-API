@@ -18,9 +18,12 @@ const cumulativeResultSchema = new mongoose.Schema(
       required: true
     },
 
+    pdf_file_id: {
+      type: mongoose.Schema.Types.ObjectId
+    },
+
     pdf_data: {
-      type: Buffer,
-      required: true
+      type: Buffer
     },
 
     pdf_mime_type: {

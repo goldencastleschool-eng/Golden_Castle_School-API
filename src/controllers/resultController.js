@@ -3,6 +3,11 @@ const Result = require("../models/resultModel");
 const Student = require("../models/studentModel");
 
 const ResultAccess = require("../models/resultAccessModel");
+const {
+  deletePdfFile,
+  sendPdfFile,
+  uploadPdfBuffer
+} = require("../utils/pdfStorage");
 
 const createSafeFileName = (...parts) => {
   return `${parts.filter(Boolean).join("-")}-result.pdf`
@@ -18,13 +23,19 @@ const isPdfBuffer = (buffer) => {
 
 const buildResultQuery = () =>
   Result.find({
-    pdf_data: { $exists: true }
+    $or: [
+      { pdf_file_id: { $exists: true } },
+      { pdf_data: { $exists: true } }
+    ]
   }).select("-pdf_data");
 
 const buildStudentResultQuery = (query) =>
   Result.find({
     ...query,
-    pdf_data: { $exists: true }
+    $or: [
+      { pdf_file_id: { $exists: true } },
+      { pdf_data: { $exists: true } }
+    ]
   }).select("-pdf_data");
 
 const enforceResultAccess = async (req, result) => {
@@ -92,26 +103,15 @@ const sendResultPdf = async (req, res, dispositionType) => {
       result.session
     );
 
-    if (!result.pdf_data?.length) {
-      return res.status(404).json({
-        message: "Result PDF file is not available. Please re-upload this result."
-      });
-    }
-
-    res.setHeader(
-      "Content-Type",
-      result.pdf_mime_type || "application/pdf"
-    );
-    res.setHeader(
-      "Content-Disposition",
-      `${dispositionType}; filename="${fileName}"`
-    );
-    res.setHeader(
-      "Content-Length",
-      result.pdf_data.length
-    );
-
-    return res.send(result.pdf_data);
+    return sendPdfFile({
+      res,
+      fileId: result.pdf_file_id,
+      fallbackBuffer: result.pdf_data,
+      fileName,
+      contentType: result.pdf_mime_type,
+      dispositionType,
+      unavailableMessage: "Result PDF file is not available. Please re-upload this result."
+    });
 
   } catch (error) {
     return res.status(500).json({
@@ -159,15 +159,34 @@ const uploadResult = async (req, res) => {
       session
     );
 
-    const result = await Result.create({
-      student: studentId,
-      session,
-      term,
-      class: studentClass,
-      pdf_data: req.file.buffer,
-      pdf_mime_type: req.file.mimetype,
-      file_name: fileName
+    const pdfFileId = await uploadPdfBuffer(req.file.buffer, {
+      fileName,
+      contentType: req.file.mimetype,
+      metadata: {
+        type: "termly-result",
+        student: studentId,
+        session,
+        term,
+        class: studentClass
+      }
     });
+
+    let result;
+
+    try {
+      result = await Result.create({
+        student: studentId,
+        session,
+        term,
+        class: studentClass,
+        pdf_file_id: pdfFileId,
+        pdf_mime_type: req.file.mimetype,
+        file_name: fileName
+      });
+    } catch (error) {
+      await deletePdfFile(pdfFileId);
+      throw error;
+    }
 
     res.status(201).json({
       ...result.toObject(),
@@ -298,6 +317,8 @@ const updateResult = async (req, res) => {
     result.class = nextClass;
     result.file_name = fileName;
 
+    let previousPdfFileId = null;
+
     if (req.file) {
       if (!isPdfBuffer(req.file.buffer)) {
         return res.status(400).json({
@@ -305,11 +326,26 @@ const updateResult = async (req, res) => {
         });
       }
 
-      result.pdf_data = req.file.buffer;
+      previousPdfFileId = result.pdf_file_id;
+      const pdfFileId = await uploadPdfBuffer(req.file.buffer, {
+        fileName,
+        contentType: req.file.mimetype,
+        metadata: {
+          type: "termly-result",
+          student: targetStudentId.toString(),
+          session: nextSession,
+          term: nextTerm,
+          class: nextClass
+        }
+      });
+
+      result.pdf_file_id = pdfFileId;
+      result.pdf_data = undefined;
       result.pdf_mime_type = req.file.mimetype;
     }
 
     const updatedResult = await result.save();
+    await deletePdfFile(previousPdfFileId);
 
     res.json({
       ...updatedResult.toObject(),
@@ -337,7 +373,10 @@ const deleteResult = async (req, res) => {
       });
     }
 
+    const pdfFileId = result.pdf_file_id;
+
     await result.deleteOne();
+    await deletePdfFile(pdfFileId);
 
     res.json({
       message: "Result deleted successfully"

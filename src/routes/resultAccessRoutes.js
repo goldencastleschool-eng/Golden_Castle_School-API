@@ -5,7 +5,8 @@ const router = express.Router();
 const {
   getResultAccess,
   updateResultAccess,
-  updateCumulativeResultAccess
+  updateCumulativeResultAccess,
+  updateBroadsheetAccess
 } = require("../controllers/resultAccessController");
 
 const protect = require("../middleware/authMiddleware");
@@ -19,6 +20,13 @@ router.put(
   protect,
   authorizeRoles("admin"),
   updateCumulativeResultAccess
+);
+
+router.put(
+  "/broadsheet",
+  protect,
+  authorizeRoles("admin"),
+  updateBroadsheetAccess
 );
 
 router.put("/", protect, authorizeRoles("admin"), updateResultAccess);

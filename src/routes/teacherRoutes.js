@@ -4,7 +4,10 @@ const router = express.Router();
 
 const {
   getTeachers,
-  createTeacher
+  createTeacher,
+  updateTeacher,
+  resetTeacherPassword,
+  deleteTeacher
 } = require("../controllers/teacherController");
 
 const protect = require("../middleware/authMiddleware");
@@ -13,5 +16,16 @@ const authorizeRoles = require("../middleware/roleMiddleware");
 router.get("/", protect, authorizeRoles("admin"), getTeachers);
 
 router.post("/", protect, authorizeRoles("admin"), createTeacher);
+
+router.put("/:id", protect, authorizeRoles("admin"), updateTeacher);
+
+router.put(
+  "/:id/reset-password",
+  protect,
+  authorizeRoles("admin"),
+  resetTeacherPassword
+);
+
+router.delete("/:id", protect, authorizeRoles("admin"), deleteTeacher);
 
 module.exports = router;

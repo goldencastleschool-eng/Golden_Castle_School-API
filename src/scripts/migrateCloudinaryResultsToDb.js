@@ -4,6 +4,10 @@ const https = require("https");
 const mongoose = require("mongoose");
 
 const Result = require("../models/resultModel");
+const {
+  deletePdfFile,
+  uploadPdfBuffer
+} = require("../utils/pdfStorage");
 
 const createSafeFileName = (...parts) => {
   return `${parts.filter(Boolean).join("-")}-result.pdf`
@@ -34,7 +38,7 @@ const migrateResults = async () => {
   const legacyResults = await Result.collection
     .find({
       pdf_url: { $exists: true },
-      pdf_data: { $exists: false }
+      pdf_file_id: { $exists: false }
     })
     .toArray();
 
@@ -51,20 +55,38 @@ const migrateResults = async () => {
       result.file_name ||
       createSafeFileName(result.term, result.session, result._id.toString());
 
-    await Result.collection.updateOne(
-      { _id: result._id },
-      {
-        $set: {
-          pdf_data: pdfBuffer,
-          pdf_mime_type: "application/pdf",
-          file_name: fileName
-        },
-        $unset: {
-          pdf_url: "",
-          public_id: ""
-        }
+    const pdfFileId = await uploadPdfBuffer(pdfBuffer, {
+      fileName,
+      contentType: "application/pdf",
+      metadata: {
+        type: "termly-result",
+        source_record_id: result._id.toString(),
+        session: result.session,
+        term: result.term,
+        class: result.class
       }
-    );
+    });
+
+    try {
+      await Result.collection.updateOne(
+        { _id: result._id },
+        {
+          $set: {
+            pdf_file_id: pdfFileId,
+            pdf_mime_type: "application/pdf",
+            file_name: fileName
+          },
+          $unset: {
+            pdf_url: "",
+            public_id: "",
+            pdf_data: ""
+          }
+        }
+      );
+    } catch (error) {
+      await deletePdfFile(pdfFileId);
+      throw error;
+    }
 
     console.log(`Migrated result ${result._id}`);
   }

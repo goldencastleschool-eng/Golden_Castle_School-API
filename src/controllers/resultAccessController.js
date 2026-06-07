@@ -13,7 +13,9 @@ const getResultAccess = async (req, res) => {
         key: ACCESS_KEY,
         session: "",
         term: "",
-        cumulative_session: ""
+        cumulative_session: "",
+        broadsheet_session: "",
+        broadsheet_term: ""
       }
     );
 
@@ -44,7 +46,9 @@ const updateResultAccess = async (req, res) => {
         key: ACCESS_KEY,
         session,
         term,
-        cumulative_session: existingAccess?.cumulative_session || ""
+        cumulative_session: existingAccess?.cumulative_session || "",
+        broadsheet_session: existingAccess?.broadsheet_session || "",
+        broadsheet_term: existingAccess?.broadsheet_term || ""
       },
       {
         new: true,
@@ -86,7 +90,50 @@ const updateCumulativeResultAccess = async (req, res) => {
         key: ACCESS_KEY,
         session: existingAccess?.session || "",
         term: existingAccess?.term || "",
-        cumulative_session: approvedSession
+        cumulative_session: approvedSession,
+        broadsheet_session: existingAccess?.broadsheet_session || "",
+        broadsheet_term: existingAccess?.broadsheet_term || ""
+      },
+      {
+        new: true,
+        upsert: true
+      }
+    );
+
+    res.json(access);
+
+  } catch (error) {
+    res.status(500).json({
+      error: error.message
+    });
+  }
+};
+
+const updateBroadsheetAccess = async (req, res) => {
+  try {
+    const { broadsheet_session, broadsheet_term, session, term } = req.body;
+    const approvedSession = broadsheet_session || session;
+    const approvedTerm = broadsheet_term || term;
+
+    if (!approvedSession || !approvedTerm) {
+      return res.status(400).json({
+        message: "Broadsheet session and term are required"
+      });
+    }
+
+    const existingAccess = await ResultAccess.findOne({
+      key: ACCESS_KEY
+    });
+
+    const access = await ResultAccess.findOneAndUpdate(
+      { key: ACCESS_KEY },
+      {
+        key: ACCESS_KEY,
+        session: existingAccess?.session || "",
+        term: existingAccess?.term || "",
+        cumulative_session: existingAccess?.cumulative_session || "",
+        broadsheet_session: approvedSession,
+        broadsheet_term: approvedTerm
       },
       {
         new: true,
@@ -107,5 +154,6 @@ module.exports = {
   getResultAccess,
   updateResultAccess,
   updateCumulativeResultAccess,
+  updateBroadsheetAccess,
   ACCESS_KEY
 };

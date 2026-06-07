@@ -19,4 +19,26 @@ const upload = multer({
   }
 });
 
+const handleUploadError = (error, req, res, next) => {
+  if (!error) {
+    return next();
+  }
+
+  if (error instanceof multer.MulterError) {
+    const message =
+      error.code === "LIMIT_FILE_SIZE"
+        ? "PDF file must not be larger than 5MB"
+        : error.message;
+
+    return res.status(400).json({
+      message
+    });
+  }
+
+  return res.status(400).json({
+    message: error.message || "Unable to process uploaded file"
+  });
+};
+
 module.exports = upload;
+module.exports.handleUploadError = handleUploadError;

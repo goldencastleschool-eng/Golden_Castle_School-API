@@ -5,6 +5,7 @@ const router = express.Router();
 const {
   adminLogin,
   studentLogin,
+  teacherLogin,
   changeStudentPassword,
   logout
 } = require("../controllers/authController");
@@ -16,6 +17,8 @@ const authorizeRoles = require("../middleware/roleMiddleware");
 router.post("/admin/login", loginRateLimit, adminLogin);
 
 router.post("/student/login", loginRateLimit, studentLogin);
+
+router.post("/teacher/login", loginRateLimit, teacherLogin);
 
 router.put(
   "/student/password",

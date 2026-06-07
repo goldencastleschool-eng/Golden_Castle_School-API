@@ -1,6 +1,11 @@
 const CumulativeResult = require("../models/cumulativeResultModel");
 const Student = require("../models/studentModel");
 const ResultAccess = require("../models/resultAccessModel");
+const {
+  deletePdfFile,
+  sendPdfFile,
+  uploadPdfBuffer
+} = require("../utils/pdfStorage");
 
 const createSafeFileName = (...parts) => {
   return `${parts.filter(Boolean).join("-")}-cumulative-result.pdf`
@@ -16,7 +21,10 @@ const isPdfBuffer = (buffer) => {
 
 const buildCumulativeResultQuery = () =>
   CumulativeResult.find({
-    pdf_data: { $exists: true }
+    $or: [
+      { pdf_file_id: { $exists: true } },
+      { pdf_data: { $exists: true } }
+    ]
   }).select("-pdf_data");
 
 const enforceCumulativeResultAccess = async (req, result) => {
@@ -73,20 +81,15 @@ const sendCumulativeResultPdf = async (req, res, dispositionType) => {
       });
     }
 
-    if (!result.pdf_data?.length) {
-      return res.status(404).json({
-        message: "Cumulative result PDF file is not available."
-      });
-    }
-
-    res.setHeader("Content-Type", result.pdf_mime_type || "application/pdf");
-    res.setHeader(
-      "Content-Disposition",
-      `${dispositionType}; filename="${result.file_name}"`
-    );
-    res.setHeader("Content-Length", result.pdf_data.length);
-
-    return res.send(result.pdf_data);
+    return sendPdfFile({
+      res,
+      fileId: result.pdf_file_id,
+      fallbackBuffer: result.pdf_data,
+      fileName: result.file_name,
+      contentType: result.pdf_mime_type,
+      dispositionType,
+      unavailableMessage: "Cumulative result PDF file is not available."
+    });
   } catch (error) {
     return res.status(500).json({
       error: error.message
@@ -133,14 +136,32 @@ const uploadCumulativeResult = async (req, res) => {
       session
     );
 
-    const result = await CumulativeResult.create({
-      student: studentId,
-      session,
-      class: studentClass,
-      pdf_data: req.file.buffer,
-      pdf_mime_type: req.file.mimetype,
-      file_name: fileName
+    const pdfFileId = await uploadPdfBuffer(req.file.buffer, {
+      fileName,
+      contentType: req.file.mimetype,
+      metadata: {
+        type: "cumulative-result",
+        student: studentId,
+        session,
+        class: studentClass
+      }
     });
+
+    let result;
+
+    try {
+      result = await CumulativeResult.create({
+        student: studentId,
+        session,
+        class: studentClass,
+        pdf_file_id: pdfFileId,
+        pdf_mime_type: req.file.mimetype,
+        file_name: fileName
+      });
+    } catch (error) {
+      await deletePdfFile(pdfFileId);
+      throw error;
+    }
 
     res.status(201).json({
       ...result.toObject(),
@@ -184,7 +205,10 @@ const getStudentCumulativeResults = async (req, res) => {
 
     const query = {
         student: studentId,
-        pdf_data: { $exists: true }
+        $or: [
+          { pdf_file_id: { $exists: true } },
+          { pdf_data: { $exists: true } }
+        ]
       };
 
     if (req.user.role === "student") {
@@ -250,6 +274,8 @@ const updateCumulativeResult = async (req, res) => {
     result.class = nextClass;
     result.file_name = fileName;
 
+    let previousPdfFileId = null;
+
     if (req.file) {
       if (!isPdfBuffer(req.file.buffer)) {
         return res.status(400).json({
@@ -257,11 +283,25 @@ const updateCumulativeResult = async (req, res) => {
         });
       }
 
-      result.pdf_data = req.file.buffer;
+      previousPdfFileId = result.pdf_file_id;
+      const pdfFileId = await uploadPdfBuffer(req.file.buffer, {
+        fileName,
+        contentType: req.file.mimetype,
+        metadata: {
+          type: "cumulative-result",
+          student: targetStudentId.toString(),
+          session: nextSession,
+          class: nextClass
+        }
+      });
+
+      result.pdf_file_id = pdfFileId;
+      result.pdf_data = undefined;
       result.pdf_mime_type = req.file.mimetype;
     }
 
     const updatedResult = await result.save();
+    await deletePdfFile(previousPdfFileId);
 
     res.json({
       ...updatedResult.toObject(),
@@ -284,7 +324,10 @@ const deleteCumulativeResult = async (req, res) => {
       });
     }
 
+    const pdfFileId = result.pdf_file_id;
+
     await result.deleteOne();
+    await deletePdfFile(pdfFileId);
 
     res.json({
       message: "Cumulative result deleted successfully"

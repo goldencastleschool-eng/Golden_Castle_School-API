@@ -1,6 +1,7 @@
 const bcrypt = require("bcryptjs");
 const Admin = require("../models/adminModel");
 const Student = require("../models/studentModel");
+const Teacher = require("../models/teacherModel");
 const generateToken = require("../utils/generateToken");
 
 // ======================
@@ -108,6 +109,49 @@ const logout = (req, res) => {
   });
 };
 
+const teacherLogin = async (req, res) => {
+  try {
+    const { username, password } = req.body;
+
+    const teacher = await Teacher.findOne({
+      username: username?.trim().toLowerCase(),
+    });
+
+    if (!teacher) {
+      return res.status(401).json({
+        message: "Invalid credentials",
+      });
+    }
+
+    const isMatch = await bcrypt.compare(password, teacher.password);
+
+    if (!isMatch) {
+      return res.status(401).json({
+        message: "Invalid credentials",
+      });
+    }
+
+    const token = generateToken(teacher._id, "teacher");
+
+    return res.status(200).json({
+      token,
+      teacher: {
+        id: teacher._id,
+        full_name: teacher.full_name,
+        username: teacher.username,
+        session: teacher.session,
+        assigned_class: teacher.assigned_class,
+        assigned_class_record: teacher.assigned_class_record,
+        role: "teacher",
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: error.message,
+    });
+  }
+};
+
 const changeStudentPassword = async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
@@ -156,6 +200,7 @@ const changeStudentPassword = async (req, res) => {
 module.exports = {
   adminLogin,
   studentLogin,
+  teacherLogin,
   changeStudentPassword,
   logout,
 };

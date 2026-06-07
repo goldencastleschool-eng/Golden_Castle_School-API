@@ -21,6 +21,16 @@ const resultAccessSchema = new mongoose.Schema(
     cumulative_session: {
       type: String,
       default: ""
+    },
+
+    broadsheet_session: {
+      type: String,
+      default: ""
+    },
+
+    broadsheet_term: {
+      type: String,
+      default: ""
     }
   },
   {

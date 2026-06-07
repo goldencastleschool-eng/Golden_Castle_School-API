@@ -1,13 +1,7 @@
 const mongoose = require("mongoose");
 
-const resultSchema = new mongoose.Schema(
+const classBroadsheetSchema = new mongoose.Schema(
   {
-    student: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Student",
-      required: true
-    },
-
     session: {
       type: String,
       required: true
@@ -20,6 +14,18 @@ const resultSchema = new mongoose.Schema(
 
     class: {
       type: String,
+      required: true
+    },
+
+    class_record: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Class",
+      required: true
+    },
+
+    assigned_teacher: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Teacher",
       required: true
     },
 
@@ -46,7 +52,16 @@ const resultSchema = new mongoose.Schema(
   }
 );
 
-module.exports = mongoose.model(
-  "Result",
-  resultSchema
+classBroadsheetSchema.index(
+  {
+    session: 1,
+    term: 1,
+    class_record: 1,
+    assigned_teacher: 1
+  },
+  {
+    unique: true
+  }
 );
+
+module.exports = mongoose.model("ClassBroadsheet", classBroadsheetSchema);
