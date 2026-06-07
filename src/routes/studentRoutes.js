@@ -7,7 +7,10 @@ const {
   getAllStudents,
   updateStudent,
   deleteStudent,
-  promoteStudentsByClass
+  promoteStudentsByClass,
+  graduateStudents,
+  restoreGraduatedStudents,
+  markStudentsLeftSchool
 } = require("../controllers/studentController");
 
 const protect = require("../middleware/authMiddleware");
@@ -23,6 +26,25 @@ router.get("/", protect, authorizeRoles("admin"), getAllStudents);
 
 // ONLY ADMIN CAN PROMOTE STUDENTS BY CLASS
 router.post("/promote", protect, authorizeRoles("admin"), promoteStudentsByClass);
+
+// ONLY ADMIN CAN GRADUATE STUDENTS
+router.post("/graduate", protect, authorizeRoles("admin"), graduateStudents);
+
+// ONLY ADMIN CAN RESTORE GRADUATED STUDENTS
+router.post(
+  "/restore-graduated",
+  protect,
+  authorizeRoles("admin"),
+  restoreGraduatedStudents
+);
+
+// ONLY ADMIN CAN MARK STUDENTS AS LEFT SCHOOL
+router.post(
+  "/left-school",
+  protect,
+  authorizeRoles("admin"),
+  markStudentsLeftSchool
+);
 
 // ONLY ADMIN CAN UPDATE STUDENTS
 router.put("/:id", protect, authorizeRoles("admin"), updateStudent);

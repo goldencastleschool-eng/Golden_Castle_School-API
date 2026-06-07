@@ -22,6 +22,31 @@ const sanitizeStudent = (student) => {
   return safeStudent;
 };
 
+const activeStudentStatusQuery = {
+  $or: [
+    { status: "active" },
+    { status: { $exists: false } },
+    { status: null },
+    { status: "" }
+  ]
+};
+
+const isActiveStudentRecord = (student) =>
+  !student.status || student.status === "active";
+
+const studentBelongsToClassRecord = (student, classRecord) => {
+  const studentClassRecordId =
+    student.class_record?._id || student.class_record || "";
+
+  return (
+    studentClassRecordId.toString() === classRecord._id.toString() ||
+    (
+      normalizeClassName(student.class) === normalizeClassName(classRecord.name) &&
+      normalizeSession(student.current_session) === normalizeSession(classRecord.session)
+    )
+  );
+};
+
 const registerStudent = async (req, res) => {
   try {
     const {
@@ -278,13 +303,23 @@ const promoteStudentsByClass = async (req, res) => {
       selectedStudentIds.length > 0
         ? {
             _id: { $in: selectedStudentIds },
-            ...sourceClassQuery
+            $and: [sourceClassQuery, activeStudentStatusQuery]
           }
-        : sourceClassQuery,
+        : {
+            $and: [sourceClassQuery, activeStudentStatusQuery]
+          },
       {
         class: targetClass.name,
         class_record: targetClass._id,
-        current_session: targetClass.session
+        current_session: targetClass.session,
+        status: "active",
+        graduated_at: null,
+        graduation_session: "",
+        graduation_class: "",
+        left_at: null,
+        left_session: "",
+        left_term: "",
+        left_class: ""
       }
     );
 
@@ -303,10 +338,224 @@ const promoteStudentsByClass = async (req, res) => {
   }
 };
 
+const graduateStudents = async (req, res) => {
+  try {
+    const {
+      fromClass,
+      fromSession,
+      fromClassRecord,
+      studentIds = [],
+      graduationSession
+    } = req.body;
+
+    if (!fromClassRecord && (!fromClass || !fromSession)) {
+      return res.status(400).json({
+        message: "Class and session are required"
+      });
+    }
+
+    const sourceClass = fromClassRecord
+      ? await Class.findById(fromClassRecord)
+      : await ensureClassRecord(fromClass, fromSession);
+
+    if (!sourceClass) {
+      return res.status(400).json({
+        message: "Source class record is required"
+      });
+    }
+
+    const selectedStudentIds = Array.isArray(studentIds)
+      ? studentIds.filter(Boolean)
+      : [];
+
+    if (selectedStudentIds.length === 0) {
+      return res.status(400).json({
+        message: "Select at least one student to graduate"
+      });
+    }
+
+    const selectedStudents = await Student.find({
+      _id: { $in: selectedStudentIds }
+    }).select("_id status class class_record current_session");
+
+    const eligibleStudentIds = selectedStudents
+      .filter(
+        (student) =>
+          isActiveStudentRecord(student) &&
+          studentBelongsToClassRecord(student, sourceClass)
+      )
+      .map((student) => student._id);
+
+    if (eligibleStudentIds.length === 0) {
+      return res.status(400).json({
+        message: "No selected active student belongs to this class/session"
+      });
+    }
+
+    const graduationResult = await Student.updateMany(
+      {
+        _id: { $in: eligibleStudentIds }
+      },
+      {
+        status: "graduated",
+        graduated_at: new Date(),
+        graduation_session: graduationSession || sourceClass.session,
+        graduation_class: sourceClass.name
+      }
+    );
+
+    res.json({
+      message: `${graduationResult.modifiedCount} student(s) graduated successfully.`,
+      matchedCount: graduationResult.matchedCount,
+      modifiedCount: graduationResult.modifiedCount,
+      selectedCount: selectedStudentIds.length
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      error: error.message
+    });
+  }
+};
+
+const restoreGraduatedStudents = async (req, res) => {
+  try {
+    const {
+      studentIds = []
+    } = req.body;
+
+    const selectedStudentIds = Array.isArray(studentIds)
+      ? studentIds.filter(Boolean)
+      : [];
+
+    if (selectedStudentIds.length === 0) {
+      return res.status(400).json({
+        message: "Select at least one graduated student to restore"
+      });
+    }
+
+    const restoreResult = await Student.updateMany(
+      {
+        _id: { $in: selectedStudentIds },
+        status: "graduated"
+      },
+      {
+        status: "active",
+        graduated_at: null,
+        graduation_session: "",
+        graduation_class: ""
+      }
+    );
+
+    res.json({
+      message: `${restoreResult.modifiedCount} student(s) restored to active students.`,
+      matchedCount: restoreResult.matchedCount,
+      modifiedCount: restoreResult.modifiedCount,
+      selectedCount: selectedStudentIds.length
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      error: error.message
+    });
+  }
+};
+
+const markStudentsLeftSchool = async (req, res) => {
+  try {
+    const {
+      fromClass,
+      fromSession,
+      fromClassRecord,
+      studentIds = [],
+      leftSession,
+      leftTerm
+    } = req.body;
+
+    if (!fromClassRecord && (!fromClass || !fromSession)) {
+      return res.status(400).json({
+        message: "Class and session are required"
+      });
+    }
+
+    if (!leftSession || !leftTerm) {
+      return res.status(400).json({
+        message: "Leaving session and term are required"
+      });
+    }
+
+    const sourceClass = fromClassRecord
+      ? await Class.findById(fromClassRecord)
+      : await ensureClassRecord(fromClass, fromSession);
+
+    if (!sourceClass) {
+      return res.status(400).json({
+        message: "Source class record is required"
+      });
+    }
+
+    const selectedStudentIds = Array.isArray(studentIds)
+      ? studentIds.filter(Boolean)
+      : [];
+
+    if (selectedStudentIds.length === 0) {
+      return res.status(400).json({
+        message: "Select at least one student that left the school"
+      });
+    }
+
+    const selectedStudents = await Student.find({
+      _id: { $in: selectedStudentIds }
+    }).select("_id status class class_record current_session");
+
+    const eligibleStudentIds = selectedStudents
+      .filter(
+        (student) =>
+          isActiveStudentRecord(student) &&
+          studentBelongsToClassRecord(student, sourceClass)
+      )
+      .map((student) => student._id);
+
+    if (eligibleStudentIds.length === 0) {
+      return res.status(400).json({
+        message: "No selected active student belongs to this class/session"
+      });
+    }
+
+    const leftResult = await Student.updateMany(
+      {
+        _id: { $in: eligibleStudentIds }
+      },
+      {
+        status: "left",
+        left_at: new Date(),
+        left_session: leftSession,
+        left_term: leftTerm,
+        left_class: sourceClass.name
+      }
+    );
+
+    res.json({
+      message: `${leftResult.modifiedCount} student(s) marked as left school.`,
+      matchedCount: leftResult.matchedCount,
+      modifiedCount: leftResult.modifiedCount,
+      selectedCount: selectedStudentIds.length
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   registerStudent,
   getAllStudents,
   updateStudent,
   deleteStudent,
-  promoteStudentsByClass
+  promoteStudentsByClass,
+  graduateStudents,
+  restoreGraduatedStudents,
+  markStudentsLeftSchool
 };
