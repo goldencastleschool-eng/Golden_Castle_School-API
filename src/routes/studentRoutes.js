@@ -6,6 +6,7 @@ const {
   registerStudent,
   getAllStudents,
   updateStudent,
+  resetStudentPassword,
   deleteStudent,
   promoteStudentsByClass,
   graduateStudents,
@@ -44,6 +45,14 @@ router.post(
   protect,
   authorizeRoles("admin"),
   markStudentsLeftSchool
+);
+
+// ONLY ADMIN CAN RESET STUDENT PASSWORD
+router.put(
+  "/:id/reset-password",
+  protect,
+  authorizeRoles("admin"),
+  resetStudentPassword
 );
 
 // ONLY ADMIN CAN UPDATE STUDENTS

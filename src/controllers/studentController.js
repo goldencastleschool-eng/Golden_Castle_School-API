@@ -100,7 +100,8 @@ const registerStudent = async (req, res) => {
       class_record: selectedClass._id,
       current_session: selectedClass.session,
       gender,
-      password: hashedPassword
+      password: hashedPassword,
+      initial_password: hashedPassword
     });
 
     res.status(201).json(sanitizeStudent(student));
@@ -209,6 +210,37 @@ const updateStudent = async (req, res) => {
     );
 
     res.json(sanitizeStudent(updatedStudent));
+
+  } catch (error) {
+    res.status(500).json({
+      error: error.message
+    });
+  }
+};
+
+const resetStudentPassword = async (req, res) => {
+  try {
+    const student = await Student.findById(req.params.id);
+
+    if (!student) {
+      return res.status(404).json({
+        message: "Student not found"
+      });
+    }
+
+    if (!student.initial_password) {
+      return res.status(400).json({
+        message:
+          "Original registration password is not available for this student. Reset manually by editing the student record."
+      });
+    }
+
+    student.password = student.initial_password;
+    await student.save();
+
+    res.json({
+      message: "Student password reset to original registration password"
+    });
 
   } catch (error) {
     res.status(500).json({
@@ -553,6 +585,7 @@ module.exports = {
   registerStudent,
   getAllStudents,
   updateStudent,
+  resetStudentPassword,
   deleteStudent,
   promoteStudentsByClass,
   graduateStudents,

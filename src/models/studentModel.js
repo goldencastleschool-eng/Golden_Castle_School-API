@@ -69,6 +69,10 @@ const studentSchema = new mongoose.Schema(
     password: {
       type: String,
       required: true
+    },
+
+    initial_password: {
+      type: String
     }
   },
   {

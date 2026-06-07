@@ -8,6 +8,7 @@ const authRoutes = require("./routes/authRoutes");
 const resultRoutes = require("./routes/resultRoutes");
 const cumulativeResultRoutes = require("./routes/cumulativeResultRoutes");
 const resultAccessRoutes = require("./routes/resultAccessRoutes");
+const teacherRoutes = require("./routes/teacherRoutes");
 
 const securityHeaders = (req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
@@ -42,6 +43,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/results', resultRoutes);
 app.use('/api/cumulative-results', cumulativeResultRoutes);
 app.use('/api/result-access', resultAccessRoutes);
+app.use('/api/teachers', teacherRoutes);
 
 
 module.exports = app;
