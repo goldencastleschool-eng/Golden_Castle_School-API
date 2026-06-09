@@ -31,6 +31,16 @@ const resultAccessSchema = new mongoose.Schema(
     broadsheet_term: {
       type: String,
       default: ""
+    },
+
+    class_result_session: {
+      type: String,
+      default: ""
+    },
+
+    class_result_term: {
+      type: String,
+      default: ""
     }
   },
   {

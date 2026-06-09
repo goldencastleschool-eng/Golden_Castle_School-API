@@ -15,7 +15,9 @@ const getResultAccess = async (req, res) => {
         term: "",
         cumulative_session: "",
         broadsheet_session: "",
-        broadsheet_term: ""
+        broadsheet_term: "",
+        class_result_session: "",
+        class_result_term: ""
       }
     );
 
@@ -48,7 +50,9 @@ const updateResultAccess = async (req, res) => {
         term,
         cumulative_session: existingAccess?.cumulative_session || "",
         broadsheet_session: existingAccess?.broadsheet_session || "",
-        broadsheet_term: existingAccess?.broadsheet_term || ""
+        broadsheet_term: existingAccess?.broadsheet_term || "",
+        class_result_session: existingAccess?.class_result_session || "",
+        class_result_term: existingAccess?.class_result_term || ""
       },
       {
         new: true,
@@ -92,7 +96,9 @@ const updateCumulativeResultAccess = async (req, res) => {
         term: existingAccess?.term || "",
         cumulative_session: approvedSession,
         broadsheet_session: existingAccess?.broadsheet_session || "",
-        broadsheet_term: existingAccess?.broadsheet_term || ""
+        broadsheet_term: existingAccess?.broadsheet_term || "",
+        class_result_session: existingAccess?.class_result_session || "",
+        class_result_term: existingAccess?.class_result_term || ""
       },
       {
         new: true,
@@ -133,7 +139,57 @@ const updateBroadsheetAccess = async (req, res) => {
         term: existingAccess?.term || "",
         cumulative_session: existingAccess?.cumulative_session || "",
         broadsheet_session: approvedSession,
-        broadsheet_term: approvedTerm
+        broadsheet_term: approvedTerm,
+        class_result_session: existingAccess?.class_result_session || "",
+        class_result_term: existingAccess?.class_result_term || ""
+      },
+      {
+        new: true,
+        upsert: true
+      }
+    );
+
+    res.json(access);
+
+  } catch (error) {
+    res.status(500).json({
+      error: error.message
+    });
+  }
+};
+
+const updateClassResultAccess = async (req, res) => {
+  try {
+    const {
+      class_result_session,
+      class_result_term,
+      session,
+      term
+    } = req.body;
+    const approvedSession = class_result_session || session;
+    const approvedTerm = class_result_term || term;
+
+    if (!approvedSession || !approvedTerm) {
+      return res.status(400).json({
+        message: "Class result session and term are required"
+      });
+    }
+
+    const existingAccess = await ResultAccess.findOne({
+      key: ACCESS_KEY
+    });
+
+    const access = await ResultAccess.findOneAndUpdate(
+      { key: ACCESS_KEY },
+      {
+        key: ACCESS_KEY,
+        session: existingAccess?.session || "",
+        term: existingAccess?.term || "",
+        cumulative_session: existingAccess?.cumulative_session || "",
+        broadsheet_session: existingAccess?.broadsheet_session || "",
+        broadsheet_term: existingAccess?.broadsheet_term || "",
+        class_result_session: approvedSession,
+        class_result_term: approvedTerm
       },
       {
         new: true,
@@ -155,5 +211,6 @@ module.exports = {
   updateResultAccess,
   updateCumulativeResultAccess,
   updateBroadsheetAccess,
+  updateClassResultAccess,
   ACCESS_KEY
 };

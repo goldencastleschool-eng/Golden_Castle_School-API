@@ -6,7 +6,8 @@ const {
   getResultAccess,
   updateResultAccess,
   updateCumulativeResultAccess,
-  updateBroadsheetAccess
+  updateBroadsheetAccess,
+  updateClassResultAccess
 } = require("../controllers/resultAccessController");
 
 const protect = require("../middleware/authMiddleware");
@@ -27,6 +28,13 @@ router.put(
   protect,
   authorizeRoles("admin"),
   updateBroadsheetAccess
+);
+
+router.put(
+  "/class-result",
+  protect,
+  authorizeRoles("admin"),
+  updateClassResultAccess
 );
 
 router.put("/", protect, authorizeRoles("admin"), updateResultAccess);
