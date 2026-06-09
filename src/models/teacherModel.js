@@ -20,13 +20,13 @@ const teacherSchema = new mongoose.Schema(
 
     assigned_class: {
       type: String,
-      required: true
+      default: ""
     },
 
     assigned_class_record: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Class",
-      required: true
+      default: null
     },
 
     password: {
@@ -36,7 +36,37 @@ const teacherSchema = new mongoose.Schema(
 
     initial_password: {
       type: String
-    }
+    },
+
+    status: {
+      type: String,
+      enum: ["active", "inactive"],
+      default: "active"
+    },
+
+    deactivated_at: {
+      type: Date,
+      default: null
+    },
+
+    deactivation_reason: {
+      type: String,
+      default: ""
+    },
+
+    assignment_history: [
+      {
+        assigned_class: String,
+        assigned_class_record: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Class"
+        },
+        session: String,
+        status: String,
+        ended_at: Date,
+        reason: String
+      }
+    ]
   },
   {
     timestamps: true

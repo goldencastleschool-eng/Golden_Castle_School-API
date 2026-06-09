@@ -6,6 +6,7 @@ const {
   getTeachers,
   createTeacher,
   updateTeacher,
+  deactivateTeacher,
   resetTeacherPassword,
   deleteTeacher
 } = require("../controllers/teacherController");
@@ -18,6 +19,13 @@ router.get("/", protect, authorizeRoles("admin"), getTeachers);
 router.post("/", protect, authorizeRoles("admin"), createTeacher);
 
 router.put("/:id", protect, authorizeRoles("admin"), updateTeacher);
+
+router.put(
+  "/:id/deactivate",
+  protect,
+  authorizeRoles("admin"),
+  deactivateTeacher
+);
 
 router.put(
   "/:id/reset-password",

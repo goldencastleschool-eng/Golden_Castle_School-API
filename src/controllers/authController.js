@@ -123,6 +123,12 @@ const teacherLogin = async (req, res) => {
       });
     }
 
+    if (teacher.status === "inactive") {
+      return res.status(403).json({
+        message: "This teacher account has been deactivated",
+      });
+    }
+
     const isMatch = await bcrypt.compare(password, teacher.password);
 
     if (!isMatch) {
@@ -142,6 +148,7 @@ const teacherLogin = async (req, res) => {
         session: teacher.session,
         assigned_class: teacher.assigned_class,
         assigned_class_record: teacher.assigned_class_record,
+        status: teacher.status,
         role: "teacher",
       },
     });

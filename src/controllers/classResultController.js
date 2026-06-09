@@ -77,6 +77,7 @@ const uploadClassResult = async (req, res) => {
 
     if (
       !selectedTeacher ||
+      selectedTeacher.status === "inactive" ||
       selectedTeacher.session !== session ||
       !teacherClassId ||
       teacherClassId !== selectedClass._id.toString()
@@ -184,6 +185,10 @@ const getApprovedTeacherClassResults = async (req, res) => {
       return res.status(404).json({ message: "Teacher not found" });
     }
 
+    if (teacher.status === "inactive") {
+      return res.json([]);
+    }
+
     const access = await ResultAccess.findOne({
       key: "active-result-access"
     });
@@ -223,6 +228,14 @@ const enforceTeacherClassResultAccess = async (req, classResult) => {
       allowed: false,
       status: 404,
       message: "Teacher not found"
+    };
+  }
+
+  if (teacher.status === "inactive") {
+    return {
+      allowed: false,
+      status: 403,
+      message: "This teacher account is inactive"
     };
   }
 

@@ -34,6 +34,21 @@ const buildTeacherUsername = async (fullName) => {
   throw new Error("Unable to generate a unique teacher username");
 };
 
+const addAssignmentHistory = (teacher, reason = "Assignment changed") => {
+  if (!teacher.assigned_class_record) {
+    return;
+  }
+
+  teacher.assignment_history.push({
+    assigned_class: teacher.assigned_class,
+    assigned_class_record: teacher.assigned_class_record,
+    session: teacher.session,
+    status: teacher.status,
+    ended_at: new Date(),
+    reason
+  });
+};
+
 const getTeachers = async (req, res) => {
   try {
     const teachers = await Teacher.find()
@@ -140,11 +155,22 @@ const updateTeacher = async (req, res) => {
       (full_name && full_name !== teacher.full_name) ||
       (selectedClass && selectedClass.name !== teacher.assigned_class);
 
+    const isReassigningClass =
+      selectedClass &&
+      teacher.assigned_class_record?.toString() !== selectedClass._id.toString();
+
+    if (isReassigningClass) {
+      addAssignmentHistory(teacher, "Reassigned by admin");
+    }
+
     teacher.full_name = full_name || teacher.full_name;
     teacher.session = selectedClass?.session || session || teacher.session;
     teacher.assigned_class = selectedClass?.name || teacher.assigned_class;
     teacher.assigned_class_record =
       selectedClass?._id || teacher.assigned_class_record;
+    teacher.status = "active";
+    teacher.deactivated_at = null;
+    teacher.deactivation_reason = "";
 
     if (shouldRegenerateUsername) {
       teacher.username = await buildTeacherUsername(teacher.full_name);
@@ -202,6 +228,49 @@ const resetTeacherPassword = async (req, res) => {
   }
 };
 
+const deactivateTeacher = async (req, res) => {
+  try {
+    const teacher = await Teacher.findById(req.params.id);
+
+    if (!teacher) {
+      return res.status(404).json({
+        message: "Teacher not found"
+      });
+    }
+
+    if (teacher.status === "inactive") {
+      return res.status(400).json({
+        message: "Teacher is already inactive"
+      });
+    }
+
+    const reason =
+      req.body?.reason?.trim() ||
+      "Teacher deactivated by admin";
+
+    addAssignmentHistory(teacher, reason);
+
+    teacher.status = "inactive";
+    teacher.deactivated_at = new Date();
+    teacher.deactivation_reason = reason;
+    teacher.assigned_class = "";
+    teacher.assigned_class_record = null;
+
+    const updatedTeacher = await teacher.save();
+
+    res.json({
+      message:
+        "Teacher deactivated successfully. Previous records remain linked to this teacher.",
+      teacher: sanitizeTeacher(updatedTeacher)
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      error: error.message
+    });
+  }
+};
+
 const deleteTeacher = async (req, res) => {
   try {
     const teacher = await Teacher.findById(req.params.id);
@@ -229,6 +298,7 @@ module.exports = {
   getTeachers,
   createTeacher,
   updateTeacher,
+  deactivateTeacher,
   resetTeacherPassword,
   deleteTeacher
 };
