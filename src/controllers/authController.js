@@ -204,10 +204,62 @@ const changeStudentPassword = async (req, res) => {
   }
 };
 
+const changeTeacherPassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({
+        message: "Current password and new password are required",
+      });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        message: "New password must be at least 6 characters",
+      });
+    }
+
+    const teacher = await Teacher.findById(req.user.id);
+
+    if (!teacher) {
+      return res.status(404).json({
+        message: "Teacher not found",
+      });
+    }
+
+    if (teacher.status === "inactive") {
+      return res.status(403).json({
+        message: "This teacher account has been deactivated",
+      });
+    }
+
+    const isMatch = await bcrypt.compare(currentPassword, teacher.password);
+
+    if (!isMatch) {
+      return res.status(400).json({
+        message: "Current password is incorrect",
+      });
+    }
+
+    teacher.password = await bcrypt.hash(newPassword, 10);
+    await teacher.save();
+
+    return res.status(200).json({
+      message: "Password changed successfully",
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: error.message,
+    });
+  }
+};
+
 module.exports = {
   adminLogin,
   studentLogin,
   teacherLogin,
   changeStudentPassword,
+  changeTeacherPassword,
   logout,
 };

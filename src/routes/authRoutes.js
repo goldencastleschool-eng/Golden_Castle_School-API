@@ -7,6 +7,7 @@ const {
   studentLogin,
   teacherLogin,
   changeStudentPassword,
+  changeTeacherPassword,
   logout
 } = require("../controllers/authController");
 
@@ -25,6 +26,13 @@ router.put(
   protect,
   authorizeRoles("student"),
   changeStudentPassword
+);
+
+router.put(
+  "/teacher/password",
+  protect,
+  authorizeRoles("teacher"),
+  changeTeacherPassword
 );
 
 router.post("/logout", logout);
