@@ -5,6 +5,7 @@ const router = express.Router();
 const {
   getFeeStructures,
   createFeeStructure,
+  upsertBothFeeStructures,
   updateFeeStructure,
   deleteFeeStructure
 } = require("../controllers/feeStructureController");
@@ -15,6 +16,8 @@ const authorizeRoles = require("../middleware/roleMiddleware");
 router.get("/", protect, authorizeRoles("admin"), getFeeStructures);
 
 router.post("/", protect, authorizeRoles("admin"), createFeeStructure);
+
+router.put("/bulk", protect, authorizeRoles("admin"), upsertBothFeeStructures);
 
 router.put("/:id", protect, authorizeRoles("admin"), updateFeeStructure);
 

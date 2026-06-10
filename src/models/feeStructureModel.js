@@ -20,6 +20,28 @@ const feeStructureSchema = new mongoose.Schema(
       enum: ["First Term", "Second Term", "Third Term"]
     },
 
+    fee_category: {
+      type: String,
+      required: true,
+      enum: ["new", "returning"],
+      default: "returning"
+    },
+
+    items: [
+      {
+        name: {
+          type: String,
+          required: true,
+          trim: true
+        },
+        amount: {
+          type: Number,
+          required: true,
+          min: 0
+        }
+      }
+    ],
+
     amount: {
       type: Number,
       required: true,
@@ -32,7 +54,7 @@ const feeStructureSchema = new mongoose.Schema(
 );
 
 feeStructureSchema.index(
-  { class_record: 1, session: 1, term: 1 },
+  { class_record: 1, session: 1, term: 1, fee_category: 1 },
   { unique: true }
 );
 

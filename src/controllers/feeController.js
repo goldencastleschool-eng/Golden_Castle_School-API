@@ -1,12 +1,37 @@
 const Fee = require("../models/feeModel");
 const Student = require("../models/studentModel");
+const FeeStructure = require("../models/feeStructureModel");
 
 const populateStudent = {
   path: "student",
-  select: "full_name admission_no class current_session status"
+  select: "full_name admission_no class class_record current_session status fee_enrollments",
+  populate: {
+    path: "fee_enrollments.class_record",
+    select: "name session"
+  }
 };
 
-const validateFeePayload = async (payload) => {
+const populateFee = [
+  populateStudent,
+  {
+    path: "class_record",
+    select: "name session"
+  }
+];
+
+const getStudentFeeEnrollment = (student, session, term) => {
+  const enrollments = Array.isArray(student.fee_enrollments)
+    ? student.fee_enrollments
+    : [];
+
+  return enrollments.find(
+    (enrollment) =>
+      enrollment.session === session &&
+      enrollment.term === term
+  );
+};
+
+const buildFeeSnapshot = async (payload) => {
   const {
     student,
     session,
@@ -16,32 +41,80 @@ const validateFeePayload = async (payload) => {
   } = payload;
 
   if (!student || !session || !term || amount === undefined || !payment_date) {
-    return "Student, session, term, amount, and payment date are required";
+    return {
+      message: "Student, session, term, amount, and payment date are required"
+    };
   }
 
-  const selectedStudent = await Student.findById(student).select("_id");
+  const selectedStudent = await Student.findById(student)
+    .select("_id class class_record current_session fee_enrollments")
+    .populate("class_record");
 
   if (!selectedStudent) {
-    return "Selected student was not found";
+    return {
+      message: "Selected student was not found"
+    };
   }
 
   const numericAmount = Number(amount);
 
   if (!Number.isFinite(numericAmount) || numericAmount < 0) {
-    return "Amount must be a valid number";
+    return {
+      message: "Amount must be a valid number"
+    };
   }
 
   if (Number.isNaN(new Date(payment_date).getTime())) {
-    return "Payment date is invalid";
+    return {
+      message: "Payment date is invalid"
+    };
   }
 
-  return "";
+  const enrollment = getStudentFeeEnrollment(selectedStudent, session, term);
+  const feeCategory = enrollment?.fee_category || "returning";
+  const classRecordId =
+    enrollment?.class_record ||
+    selectedStudent.class_record?._id ||
+    selectedStudent.class_record;
+
+  if (!classRecordId) {
+    return {
+      message: "Student class record is required before recording payment"
+    };
+  }
+
+  const feeStructure = await FeeStructure.findOne({
+    class_record: classRecordId,
+    session,
+    term,
+    fee_category: feeCategory
+  });
+
+  if (!feeStructure) {
+    return {
+      message:
+        "Create a matching payment structure for this class, session, term, and student category before recording payment"
+    };
+  }
+
+  return {
+    selectedStudent,
+    feeCategory,
+    feeStructure,
+    classRecordId,
+    className:
+      enrollment?.class ||
+      selectedStudent.class_record?.name ||
+      selectedStudent.class ||
+      "",
+    amount: numericAmount
+  };
 };
 
 const getFees = async (req, res) => {
   try {
     const fees = await Fee.find()
-      .populate(populateStudent)
+      .populate(populateFee)
       .sort({
         payment_date: -1,
         createdAt: -1
@@ -58,26 +131,31 @@ const getFees = async (req, res) => {
 
 const createFee = async (req, res) => {
   try {
-    const validationMessage = await validateFeePayload(req.body);
+    const snapshot = await buildFeeSnapshot(req.body);
 
-    if (validationMessage) {
+    if (snapshot.message) {
       return res.status(400).json({
-        message: validationMessage
+        message: snapshot.message
       });
     }
 
     const fee = await Fee.create({
       student: req.body.student,
+      class_record: snapshot.classRecordId,
+      class: snapshot.className,
       session: req.body.session,
       term: req.body.term,
-      amount: Number(req.body.amount),
+      fee_category: snapshot.feeCategory,
+      expected_amount_at_payment: snapshot.feeStructure.amount,
+      expected_items_at_payment: snapshot.feeStructure.items || [],
+      amount: snapshot.amount,
       payment_date: new Date(req.body.payment_date),
       payment_method: req.body.payment_method || "",
       receipt_no: req.body.receipt_no || "",
       note: req.body.note || ""
     });
 
-    const populatedFee = await Fee.findById(fee._id).populate(populateStudent);
+    const populatedFee = await Fee.findById(fee._id).populate(populateFee);
 
     res.status(201).json(populatedFee);
 
@@ -98,18 +176,23 @@ const updateFee = async (req, res) => {
       });
     }
 
-    const validationMessage = await validateFeePayload(req.body);
+    const snapshot = await buildFeeSnapshot(req.body);
 
-    if (validationMessage) {
+    if (snapshot.message) {
       return res.status(400).json({
-        message: validationMessage
+        message: snapshot.message
       });
     }
 
     fee.student = req.body.student;
+    fee.class_record = snapshot.classRecordId;
+    fee.class = snapshot.className;
     fee.session = req.body.session;
     fee.term = req.body.term;
-    fee.amount = Number(req.body.amount);
+    fee.fee_category = snapshot.feeCategory;
+    fee.expected_amount_at_payment = snapshot.feeStructure.amount;
+    fee.expected_items_at_payment = snapshot.feeStructure.items || [];
+    fee.amount = snapshot.amount;
     fee.payment_date = new Date(req.body.payment_date);
     fee.payment_method = req.body.payment_method || "";
     fee.receipt_no = req.body.receipt_no || "";
@@ -117,7 +200,7 @@ const updateFee = async (req, res) => {
 
     await fee.save();
 
-    const updatedFee = await Fee.findById(fee._id).populate(populateStudent);
+    const updatedFee = await Fee.findById(fee._id).populate(populateFee);
 
     res.json(updatedFee);
 

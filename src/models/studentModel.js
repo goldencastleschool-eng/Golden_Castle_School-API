@@ -66,6 +66,35 @@ const studentSchema = new mongoose.Schema(
       type: String
     },
 
+    fee_enrollments: [
+      {
+        session: {
+          type: String,
+          required: true,
+          trim: true
+        },
+        term: {
+          type: String,
+          required: true,
+          enum: ["First Term", "Second Term", "Third Term"]
+        },
+        fee_category: {
+          type: String,
+          required: true,
+          enum: ["new", "returning"],
+          default: "returning"
+        },
+        class_record: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Class"
+        },
+        class: {
+          type: String,
+          trim: true
+        }
+      }
+    ],
+
     password: {
       type: String,
       required: true

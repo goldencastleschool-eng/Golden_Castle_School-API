@@ -34,6 +34,55 @@ const activeStudentStatusQuery = {
 const isActiveStudentRecord = (student) =>
   !student.status || student.status === "active";
 
+const validFeeTerms = ["First Term", "Second Term", "Third Term"];
+const validFeeCategories = ["new", "returning"];
+
+const normalizeFeeCategory = (feeCategory = "") =>
+  feeCategory.toString().trim().toLowerCase();
+
+const upsertFeeEnrollment = (student, {
+  session,
+  term,
+  feeCategory,
+  classRecord
+}) => {
+  const normalizedCategory = normalizeFeeCategory(feeCategory);
+
+  if (!session || !term || !normalizedCategory) {
+    return "Session, term, and student fee category are required";
+  }
+
+  if (!validFeeTerms.includes(term)) {
+    return "A valid admission term is required";
+  }
+
+  if (!validFeeCategories.includes(normalizedCategory)) {
+    return "Student fee category must be new or returning";
+  }
+
+  const existingEnrollment = student.fee_enrollments.find(
+    (enrollment) =>
+      enrollment.session === session &&
+      enrollment.term === term
+  );
+
+  const enrollmentPayload = {
+    session,
+    term,
+    fee_category: normalizedCategory,
+    class_record: classRecord._id,
+    class: classRecord.name
+  };
+
+  if (existingEnrollment) {
+    existingEnrollment.set(enrollmentPayload);
+  } else {
+    student.fee_enrollments.push(enrollmentPayload);
+  }
+
+  return "";
+};
+
 const studentBelongsToClassRecord = (student, classRecord) => {
   const studentClassRecordId =
     student.class_record?._id || student.class_record || "";
@@ -55,6 +104,8 @@ const registerStudent = async (req, res) => {
       class: studentClass,
       class_record,
       current_session,
+      admission_term,
+      fee_category,
       gender,
       password
     } = req.body;
@@ -93,7 +144,7 @@ const registerStudent = async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    const student = await Student.create({
+    const student = new Student({
       full_name,
       admission_no,
       class: selectedClass.name,
@@ -103,6 +154,21 @@ const registerStudent = async (req, res) => {
       password: hashedPassword,
       initial_password: hashedPassword
     });
+
+    const enrollmentError = upsertFeeEnrollment(student, {
+      session: selectedClass.session,
+      term: admission_term,
+      feeCategory: fee_category,
+      classRecord: selectedClass
+    });
+
+    if (enrollmentError) {
+      return res.status(400).json({
+        message: enrollmentError
+      });
+    }
+
+    await student.save();
 
     res.status(201).json(sanitizeStudent(student));
 
@@ -118,6 +184,7 @@ const getAllStudents = async (req, res) => {
     const students = await Student.find()
       .select("-password")
       .populate("class_record")
+      .populate("fee_enrollments.class_record")
       .sort({
         createdAt: -1
       });
@@ -139,6 +206,8 @@ const updateStudent = async (req, res) => {
       class: studentClass,
       class_record,
       current_session,
+      admission_term,
+      fee_category,
       gender,
       password
     } = req.body;
@@ -190,6 +259,24 @@ const updateStudent = async (req, res) => {
     student.class_record = selectedClass?._id || student.class_record;
     student.current_session = selectedClass?.session || student.current_session;
     student.gender = gender || student.gender;
+
+    if (admission_term || fee_category) {
+      const enrollmentError = upsertFeeEnrollment(student, {
+        session: selectedClass?.session || student.current_session,
+        term: admission_term,
+        feeCategory: fee_category,
+        classRecord: selectedClass || {
+          _id: student.class_record,
+          name: student.class
+        }
+      });
+
+      if (enrollmentError) {
+        return res.status(400).json({
+          message: enrollmentError
+        });
+      }
+    }
 
     if (password) {
       student.password = await bcrypt.hash(password, 10);
@@ -285,6 +372,7 @@ const promoteStudentsByClass = async (req, res) => {
       toSession,
       fromClassRecord,
       toClassRecord,
+      targetFeeTerm,
       studentIds = []
     } = req.body;
 
@@ -331,7 +419,13 @@ const promoteStudentsByClass = async (req, res) => {
       ? studentIds.filter(Boolean)
       : [];
 
-    const promotionResult = await Student.updateMany(
+    if (targetFeeTerm && !validFeeTerms.includes(targetFeeTerm)) {
+      return res.status(400).json({
+        message: "A valid target fee term is required"
+      });
+    }
+
+    const promotionQuery =
       selectedStudentIds.length > 0
         ? {
             _id: { $in: selectedStudentIds },
@@ -339,7 +433,15 @@ const promoteStudentsByClass = async (req, res) => {
           }
         : {
             $and: [sourceClassQuery, activeStudentStatusQuery]
-          },
+          };
+
+    const promotionStudents = await Student.find(promotionQuery).select("_id");
+    const promotionStudentIds = promotionStudents.map((student) => student._id);
+
+    const promotionResult = await Student.updateMany(
+      {
+        _id: { $in: promotionStudentIds }
+      },
       {
         class: targetClass.name,
         class_record: targetClass._id,
@@ -355,11 +457,45 @@ const promoteStudentsByClass = async (req, res) => {
       }
     );
 
+    if (targetFeeTerm && promotionStudentIds.length > 0) {
+      await Student.updateMany(
+        {
+          _id: { $in: promotionStudentIds }
+        },
+        {
+          $pull: {
+            fee_enrollments: {
+              session: targetClass.session,
+              term: targetFeeTerm
+            }
+          }
+        }
+      );
+
+      await Student.updateMany(
+        {
+          _id: { $in: promotionStudentIds }
+        },
+        {
+          $push: {
+            fee_enrollments: {
+              session: targetClass.session,
+              term: targetFeeTerm,
+              fee_category: "returning",
+              class_record: targetClass._id,
+              class: targetClass.name
+            }
+          }
+        }
+      );
+    }
+
     res.json({
       message: `${promotionResult.modifiedCount} student(s) moved to ${targetClass.name.toUpperCase()} for ${targetClass.session}.`,
       matchedCount: promotionResult.matchedCount,
       modifiedCount: promotionResult.modifiedCount,
       selectedCount: selectedStudentIds.length,
+      feeEnrollmentTerm: targetFeeTerm || "",
       classRecord: targetClass
     });
 
