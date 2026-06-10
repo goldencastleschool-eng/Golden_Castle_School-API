@@ -11,6 +11,8 @@ const resultAccessRoutes = require("./routes/resultAccessRoutes");
 const teacherRoutes = require("./routes/teacherRoutes");
 const classBroadsheetRoutes = require("./routes/classBroadsheetRoutes");
 const classResultRoutes = require("./routes/classResultRoutes");
+const feeRoutes = require("./routes/feeRoutes");
+const feeStructureRoutes = require("./routes/feeStructureRoutes");
 
 const securityHeaders = (req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
@@ -24,6 +26,7 @@ app.use(securityHeaders);
 app.use(cors({
   origin: [
       "http://localhost:5173",
+      "http://127.0.0.1:5173",
       "https://golden-castle-school.vercel.app",
     ],
   credentials: true
@@ -48,6 +51,8 @@ app.use('/api/result-access', resultAccessRoutes);
 app.use('/api/teachers', teacherRoutes);
 app.use('/api/class-broadsheets', classBroadsheetRoutes);
 app.use('/api/class-results', classResultRoutes);
+app.use('/api/fees', feeRoutes);
+app.use('/api/fee-structures', feeStructureRoutes);
 
 
 module.exports = app;
