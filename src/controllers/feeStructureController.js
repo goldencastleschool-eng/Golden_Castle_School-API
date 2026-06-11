@@ -1,5 +1,6 @@
 const FeeStructure = require("../models/feeStructureModel");
 const Class = require("../models/classModel");
+const { ensureFeeStructureIndexes } = require("../utils/feeStructureIndexes");
 
 const populateClass = {
   path: "class_record",
@@ -10,6 +11,24 @@ const validFeeCategories = ["new", "returning"];
 
 const normalizeFeeCategory = (feeCategory = "") =>
   feeCategory.toString().trim().toLowerCase();
+
+const isLegacyDuplicateIndexError = (error) => {
+  const keyFields = Object.keys(error.keyPattern || {});
+
+  return (
+    error.code === 11000 &&
+    keyFields.includes("class_record") &&
+    keyFields.includes("session") &&
+    keyFields.includes("term") &&
+    !keyFields.includes("fee_category")
+  );
+};
+
+const duplicateFeeStructureMessage =
+  "Fee structure already exists for this class, session, term, and fee category";
+
+const legacyFeeStructureIndexMessage =
+  "The database still has an old payment-structure index. Restart the backend, then create the payment structure again.";
 
 const normalizeItems = (items = []) => {
   if (!Array.isArray(items)) {
@@ -123,6 +142,8 @@ const getFeeStructures = async (req, res) => {
 
 const createFeeStructure = async (req, res) => {
   try {
+    await ensureFeeStructureIndexes();
+
     const validation = await validateFeeStructurePayload(req.body);
 
     if (validation.message) {
@@ -148,8 +169,9 @@ const createFeeStructure = async (req, res) => {
   } catch (error) {
     if (error.code === 11000) {
       return res.status(400).json({
-        message:
-          "Fee structure already exists for this class, session, term, and fee category"
+        message: isLegacyDuplicateIndexError(error)
+          ? legacyFeeStructureIndexMessage
+          : duplicateFeeStructureMessage
       });
     }
 
@@ -161,6 +183,8 @@ const createFeeStructure = async (req, res) => {
 
 const upsertBothFeeStructures = async (req, res) => {
   try {
+    await ensureFeeStructureIndexes();
+
     const categories = [
       {
         fee_category: "new",
@@ -228,8 +252,9 @@ const upsertBothFeeStructures = async (req, res) => {
   } catch (error) {
     if (error.code === 11000) {
       return res.status(400).json({
-        message:
-          "Fee structure already exists for this class, session, term, and fee category"
+        message: isLegacyDuplicateIndexError(error)
+          ? legacyFeeStructureIndexMessage
+          : duplicateFeeStructureMessage
       });
     }
 
@@ -241,6 +266,8 @@ const upsertBothFeeStructures = async (req, res) => {
 
 const updateFeeStructure = async (req, res) => {
   try {
+    await ensureFeeStructureIndexes();
+
     const feeStructure = await FeeStructure.findById(req.params.id);
 
     if (!feeStructure) {
@@ -274,8 +301,9 @@ const updateFeeStructure = async (req, res) => {
   } catch (error) {
     if (error.code === 11000) {
       return res.status(400).json({
-        message:
-          "Fee structure already exists for this class, session, term, and fee category"
+        message: isLegacyDuplicateIndexError(error)
+          ? legacyFeeStructureIndexMessage
+          : duplicateFeeStructureMessage
       });
     }
 
