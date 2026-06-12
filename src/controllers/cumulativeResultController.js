@@ -6,6 +6,10 @@ const {
   sendPdfFile,
   uploadPdfBuffer
 } = require("../utils/pdfStorage");
+const {
+  applyListQueryOptions,
+  getListQueryOptions
+} = require("../utils/listQueryOptions");
 
 const createSafeFileName = (...parts) => {
   return `${parts.filter(Boolean).join("-")}-cumulative-result.pdf`
@@ -176,11 +180,15 @@ const uploadCumulativeResult = async (req, res) => {
 
 const getAllCumulativeResults = async (req, res) => {
   try {
-    const results = await buildCumulativeResultQuery()
+    const query = buildCumulativeResultQuery()
       .populate("student", "full_name admission_no class current_session")
       .sort({
         createdAt: -1
       });
+    const results = await applyListQueryOptions(
+      query,
+      getListQueryOptions(req.query)
+    );
 
     res.json(results);
   } catch (error) {

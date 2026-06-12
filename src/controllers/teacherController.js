@@ -8,6 +8,10 @@ const {
   getTeacherAssignmentType,
   normalizeTeacherAssignmentType
 } = require("../utils/teacherAssignments");
+const {
+  applyListQueryOptions,
+  getListQueryOptions
+} = require("../utils/listQueryOptions");
 
 const sanitizeTeacher = (teacher) => {
   const safeTeacher = teacher.toObject ? teacher.toObject() : { ...teacher };
@@ -95,12 +99,31 @@ const addAssignmentHistory = (teacher, reason = "Assignment changed") => {
 
 const getTeachers = async (req, res) => {
   try {
-    const teachers = await Teacher.find()
+    const query = {};
+
+    if (req.query.session) {
+      query.session = req.query.session;
+    }
+
+    if (req.query.status) {
+      query.status = req.query.status;
+    }
+
+    if (req.query.assignment_type) {
+      query.assignment_type = req.query.assignment_type;
+    }
+
+    const listOptions = getListQueryOptions(req.query);
+    const teachersQuery = Teacher.find(query)
       .select("-password")
       .populate("assigned_class_record")
       .sort({
         createdAt: -1
       });
+    const teachers = await applyListQueryOptions(
+      teachersQuery,
+      listOptions
+    );
 
     res.json(teachers.map(sanitizeTeacher));
 

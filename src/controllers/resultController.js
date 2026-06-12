@@ -8,6 +8,10 @@ const {
   sendPdfFile,
   uploadPdfBuffer
 } = require("../utils/pdfStorage");
+const {
+  applyListQueryOptions,
+  getListQueryOptions
+} = require("../utils/listQueryOptions");
 
 const createSafeFileName = (...parts) => {
   return `${parts.filter(Boolean).join("-")}-result.pdf`
@@ -206,7 +210,7 @@ const getAllResults = async (req, res) => {
 
   try {
 
-    const results = await buildResultQuery()
+    const query = buildResultQuery()
       .populate(
         "student",
         "full_name admission_no class"
@@ -214,6 +218,10 @@ const getAllResults = async (req, res) => {
       .sort({
         createdAt: -1
       });
+    const results = await applyListQueryOptions(
+      query,
+      getListQueryOptions(req.query)
+    );
 
     res.json(results);
 

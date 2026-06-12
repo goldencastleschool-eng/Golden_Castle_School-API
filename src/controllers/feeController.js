@@ -1,6 +1,10 @@
 const Fee = require("../models/feeModel");
 const Student = require("../models/studentModel");
 const FeeStructure = require("../models/feeStructureModel");
+const {
+  applyListQueryOptions,
+  getListQueryOptions
+} = require("../utils/listQueryOptions");
 
 const populateStudent = {
   path: "student",
@@ -197,12 +201,34 @@ const buildFeeSnapshot = async (payload, excludedFeeId = "") => {
 
 const getFees = async (req, res) => {
   try {
-    const fees = await Fee.find()
+    const query = {};
+
+    if (req.query.student) {
+      query.student = req.query.student;
+    }
+
+    if (req.query.class_record) {
+      query.class_record = req.query.class_record;
+    }
+
+    if (req.query.session) {
+      query.session = req.query.session;
+    }
+
+    if (req.query.term) {
+      query.term = req.query.term;
+    }
+
+    const feesQuery = Fee.find(query)
       .populate(populateFee)
       .sort({
         payment_date: -1,
         createdAt: -1
       });
+    const fees = await applyListQueryOptions(
+      feesQuery,
+      getListQueryOptions(req.query)
+    );
 
     res.json(fees);
 

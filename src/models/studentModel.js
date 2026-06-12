@@ -109,6 +109,9 @@ const studentSchema = new mongoose.Schema(
   }
 );
 
+studentSchema.index({ createdAt: -1 });
+studentSchema.index({ current_session: 1, class_record: 1, createdAt: -1 });
+studentSchema.index({ current_session: 1, class: 1, createdAt: -1 });
 studentSchema.index(
   {
     full_name: "text",

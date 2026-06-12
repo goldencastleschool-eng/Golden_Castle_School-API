@@ -41,6 +41,8 @@ const cumulativeResultSchema = new mongoose.Schema(
   }
 );
 
+cumulativeResultSchema.index({ createdAt: -1 });
+cumulativeResultSchema.index({ session: 1, class: 1, createdAt: -1 });
 cumulativeResultSchema.index(
   {
     class: "text",

@@ -8,6 +8,10 @@ const {
   sendPdfFile,
   uploadPdfBuffer
 } = require("../utils/pdfStorage");
+const {
+  applyListQueryOptions,
+  getListQueryOptions
+} = require("../utils/listQueryOptions");
 
 const createSafeFileName = (...parts) => {
   return `${parts.filter(Boolean).join("-")}-broadsheet.pdf`
@@ -31,10 +35,14 @@ const broadsheetListQuery = () =>
 
 const getClassBroadsheets = async (req, res) => {
   try {
-    const broadsheets = await broadsheetListQuery()
+    const query = broadsheetListQuery()
       .populate("class_record")
       .populate("assigned_teacher", "full_name username")
       .sort({ createdAt: -1 });
+    const broadsheets = await applyListQueryOptions(
+      query,
+      getListQueryOptions(req.query)
+    );
 
     res.json(broadsheets);
 

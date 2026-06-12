@@ -52,6 +52,13 @@ const classBroadsheetSchema = new mongoose.Schema(
   }
 );
 
+classBroadsheetSchema.index({ createdAt: -1 });
+classBroadsheetSchema.index({
+  session: 1,
+  term: 1,
+  class_record: 1,
+  createdAt: -1
+});
 classBroadsheetSchema.index(
   {
     session: 1,

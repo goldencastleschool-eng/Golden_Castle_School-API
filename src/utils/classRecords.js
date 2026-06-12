@@ -12,17 +12,33 @@ const normalizeClassName = (name = "") =>
 const normalizeSession = (session = "") =>
   session.toString().trim();
 
-const ensureDynamicClassIndexes = async () => {
-  const indexes = await Class.collection.indexes();
-  const legacyNameIndex = indexes.find(
-    (index) => index.name === "name_1" && index.unique
-  );
+let dynamicClassIndexesPromise = null;
+let legacyClassSyncPromise = null;
 
-  if (legacyNameIndex) {
-    await Class.collection.dropIndex("name_1");
+const ensureDynamicClassIndexes = async () => {
+  if (dynamicClassIndexesPromise) {
+    return dynamicClassIndexesPromise;
   }
 
-  await Class.syncIndexes();
+  dynamicClassIndexesPromise = (async () => {
+    const indexes = await Class.collection.indexes();
+    const legacyNameIndex = indexes.find(
+      (index) => index.name === "name_1" && index.unique
+    );
+
+    if (legacyNameIndex) {
+      await Class.collection.dropIndex("name_1");
+    }
+
+    await Class.createIndexes();
+  })();
+
+  try {
+    return await dynamicClassIndexesPromise;
+  } catch (error) {
+    dynamicClassIndexesPromise = null;
+    throw error;
+  }
 };
 
 const findClassRecord = async (name, session) => {
@@ -83,40 +99,53 @@ const deleteStaticClassRecords = async () => {
   });
 };
 
-const syncLegacyClassesToDynamicRecords = async () => {
-  await ensureDynamicClassIndexes();
+const syncLegacyClassesToDynamicRecords = async ({ force = false } = {}) => {
+  if (!force && legacyClassSyncPromise) {
+    return legacyClassSyncPromise;
+  }
 
-  const students = await Student.find({
-    class: { $exists: true, $ne: "" },
-    current_session: { $exists: true, $ne: "" }
-  }).select("_id class current_session class_record");
+  legacyClassSyncPromise = (async () => {
+    await ensureDynamicClassIndexes();
 
-  for (const student of students) {
-    const classRecord = await ensureClassRecord(
-      student.class,
-      student.current_session
-    );
+    const students = await Student.find({
+      class: { $exists: true, $ne: "" },
+      current_session: { $exists: true, $ne: "" }
+    }).select("_id class current_session class_record");
 
-    if (
-      classRecord &&
-      (!student.class_record ||
-        student.class_record.toString() !== classRecord._id.toString())
-    ) {
-      student.class_record = classRecord._id;
-      await student.save();
+    for (const student of students) {
+      const classRecord = await ensureClassRecord(
+        student.class,
+        student.current_session
+      );
+
+      if (
+        classRecord &&
+        (!student.class_record ||
+          student.class_record.toString() !== classRecord._id.toString())
+      ) {
+        student.class_record = classRecord._id;
+        await student.save();
+      }
     }
+
+    const results = await Result.find({
+      class: { $exists: true, $ne: "" },
+      session: { $exists: true, $ne: "" }
+    }).select("class session");
+
+    for (const result of results) {
+      await ensureClassRecord(result.class, result.session);
+    }
+
+    await deleteStaticClassRecords();
+  })();
+
+  try {
+    return await legacyClassSyncPromise;
+  } catch (error) {
+    legacyClassSyncPromise = null;
+    throw error;
   }
-
-  const results = await Result.find({
-    class: { $exists: true, $ne: "" },
-    session: { $exists: true, $ne: "" }
-  }).select("class session");
-
-  for (const result of results) {
-    await ensureClassRecord(result.class, result.session);
-  }
-
-  await deleteStaticClassRecords();
 };
 
 module.exports = {

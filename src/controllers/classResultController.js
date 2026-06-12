@@ -8,6 +8,10 @@ const {
   sendPdfFile,
   uploadPdfBuffer
 } = require("../utils/pdfStorage");
+const {
+  applyListQueryOptions,
+  getListQueryOptions
+} = require("../utils/listQueryOptions");
 
 const createSafeFileName = (...parts) => {
   return `${parts.filter(Boolean).join("-")}-class-result.pdf`
@@ -31,10 +35,14 @@ const classResultListQuery = () =>
 
 const getClassResults = async (req, res) => {
   try {
-    const classResults = await classResultListQuery()
+    const query = classResultListQuery()
       .populate("class_record")
       .populate("assigned_teacher", "full_name username")
       .sort({ createdAt: -1 });
+    const classResults = await applyListQueryOptions(
+      query,
+      getListQueryOptions(req.query)
+    );
 
     res.json(classResults);
   } catch (error) {

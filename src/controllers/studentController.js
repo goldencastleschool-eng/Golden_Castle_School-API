@@ -12,6 +12,10 @@ const {
   normalizeClassName,
   normalizeSession
 } = require("../utils/classRecords");
+const {
+  applyListQueryOptions,
+  getListQueryOptions
+} = require("../utils/listQueryOptions");
 const { isFormTeacher } = require("../utils/teacherAssignments");
 
 const sanitizeStudent = (student) => {
@@ -192,13 +196,32 @@ const registerStudent = async (req, res) => {
 
 const getAllStudents = async (req, res) => {
   try {
-    const students = await Student.find()
+    const query = {};
+
+    if (req.query.class_record) {
+      query.class_record = req.query.class_record;
+    }
+
+    if (req.query.session) {
+      query.current_session = req.query.session;
+    }
+
+    if (req.query.status) {
+      query.status = req.query.status;
+    }
+
+    const listOptions = getListQueryOptions(req.query);
+    const studentsQuery = Student.find(query)
       .select("-password")
       .populate("class_record")
       .populate("fee_enrollments.class_record")
       .sort({
         createdAt: -1
       });
+    const students = await applyListQueryOptions(
+      studentsQuery,
+      listOptions
+    );
 
     res.json(students);
 

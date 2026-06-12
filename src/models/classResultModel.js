@@ -52,6 +52,13 @@ const classResultSchema = new mongoose.Schema(
   }
 );
 
+classResultSchema.index({ createdAt: -1 });
+classResultSchema.index({
+  session: 1,
+  term: 1,
+  class_record: 1,
+  createdAt: -1
+});
 classResultSchema.index(
   {
     session: 1,

@@ -1,5 +1,7 @@
 const FeeStructure = require("../models/feeStructureModel");
 
+let feeStructureIndexesPromise = null;
+
 const isLegacyFeeStructureIndex = (index) => {
   const keyFields = Object.keys(index.key || {});
 
@@ -13,14 +15,27 @@ const isLegacyFeeStructureIndex = (index) => {
 };
 
 const ensureFeeStructureIndexes = async () => {
-  const indexes = await FeeStructure.collection.indexes();
-  const legacyIndexes = indexes.filter(isLegacyFeeStructureIndex);
-
-  for (const index of legacyIndexes) {
-    await FeeStructure.collection.dropIndex(index.name);
+  if (feeStructureIndexesPromise) {
+    return feeStructureIndexesPromise;
   }
 
-  await FeeStructure.syncIndexes();
+  feeStructureIndexesPromise = (async () => {
+    const indexes = await FeeStructure.collection.indexes();
+    const legacyIndexes = indexes.filter(isLegacyFeeStructureIndex);
+
+    for (const index of legacyIndexes) {
+      await FeeStructure.collection.dropIndex(index.name);
+    }
+
+    await FeeStructure.createIndexes();
+  })();
+
+  try {
+    return await feeStructureIndexesPromise;
+  } catch (error) {
+    feeStructureIndexesPromise = null;
+    throw error;
+  }
 };
 
 module.exports = {

@@ -84,6 +84,8 @@ const teacherSchema = new mongoose.Schema(
   }
 );
 
+teacherSchema.index({ createdAt: -1 });
+teacherSchema.index({ session: 1, assignment_type: 1, status: 1, createdAt: -1 });
 teacherSchema.index(
   {
     full_name: "text",

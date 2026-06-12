@@ -93,6 +93,8 @@ const feeSchema = new mongoose.Schema(
 
 feeSchema.index({ student: 1, session: 1, term: 1, payment_date: -1 });
 feeSchema.index({ class_record: 1, session: 1, term: 1, fee_category: 1 });
+feeSchema.index({ payment_date: -1, createdAt: -1 });
+feeSchema.index({ session: 1, term: 1, payment_date: -1 });
 feeSchema.index(
   {
     receipt_no: "text",
