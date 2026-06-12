@@ -63,5 +63,22 @@ classBroadsheetSchema.index(
     unique: true
   }
 );
+classBroadsheetSchema.index(
+  {
+    class: "text",
+    session: "text",
+    term: "text",
+    file_name: "text"
+  },
+  {
+    name: "class_broadsheet_search_text",
+    weights: {
+      class: 6,
+      session: 4,
+      term: 4,
+      file_name: 2
+    }
+  }
+);
 
 module.exports = mongoose.model("ClassBroadsheet", classBroadsheetSchema);

@@ -109,4 +109,24 @@ const studentSchema = new mongoose.Schema(
   }
 );
 
+studentSchema.index(
+  {
+    full_name: "text",
+    admission_no: "text",
+    class: "text",
+    current_session: "text",
+    gender: "text"
+  },
+  {
+    name: "student_search_text",
+    weights: {
+      full_name: 10,
+      admission_no: 10,
+      class: 4,
+      current_session: 2,
+      gender: 1
+    }
+  }
+);
+
 module.exports = mongoose.model("Student", studentSchema);

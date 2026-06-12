@@ -46,6 +46,24 @@ const resultSchema = new mongoose.Schema(
   }
 );
 
+resultSchema.index(
+  {
+    class: "text",
+    session: "text",
+    term: "text",
+    file_name: "text"
+  },
+  {
+    name: "result_search_text",
+    weights: {
+      class: 6,
+      session: 4,
+      term: 4,
+      file_name: 2
+    }
+  }
+);
+
 module.exports = mongoose.model(
   "Result",
   resultSchema

@@ -61,13 +61,18 @@ const studentBelongsToClassRecord = (student = {}, classRecord = {}) => {
 const formatClassName = (classRecord = {}) =>
   classRecord.name ? classRecord.name.toString().toUpperCase() : "Class not set";
 
-const formatDateTime = (dateValue) =>
-  dateValue ? new Date(dateValue).toISOString() : "";
+const formatStudentClassName = (student = {}) =>
+  student.class ? student.class.toString().toUpperCase() : "Class not set";
 
-const buildMetric = (label, value) => ({
-  label,
-  value
-});
+const getStudentClassKey = (student = {}) => {
+  const classRecordId = getRecordId(student.class_record);
+
+  if (classRecordId) {
+    return classRecordId;
+  }
+
+  return `${normalizeClassName(student.class)}:${student.current_session || ""}`;
+};
 
 const getStatusLabel = (status) => {
   if (status === "live") {
@@ -81,18 +86,180 @@ const getStatusLabel = (status) => {
   return "Attention";
 };
 
+const formatDateTime = (dateValue) =>
+  dateValue ? new Date(dateValue).toISOString() : "";
+
+const buildMetric = (label, value) => ({
+  label,
+  value
+});
+
+const buildClassSummaryRow = ({
+  id,
+  className,
+  session = "",
+  term = "",
+  status,
+  expectedLabel,
+  expectedCount = 0,
+  visibleLabel,
+  visibleCount = 0,
+  missingLabel,
+  missingCount = 0,
+  detail = ""
+}) => ({
+  id,
+  class_name: className || "Class not set",
+  session,
+  term,
+  status,
+  status_label: getStatusLabel(status),
+  expected_label: expectedLabel,
+  expected_count: expectedCount,
+  visible_label: visibleLabel,
+  visible_count: visibleCount,
+  missing_label: missingLabel,
+  missing_count: missingCount,
+  detail
+});
+
+const buildStudentClassSummary = ({
+  students = [],
+  visibleStudentIds = new Set(),
+  statusForAll = "",
+  expectedLabel = "Students",
+  visibleLabel = "Visible",
+  missingLabel = "Missing",
+  term = "",
+  detail = ""
+}) => {
+  const classMap = new Map();
+
+  students.forEach((student) => {
+    const classKey = getStudentClassKey(student);
+
+    if (!classMap.has(classKey)) {
+      classMap.set(classKey, {
+        id: classKey,
+        className: formatStudentClassName(student),
+        session: student.current_session || "",
+        expectedCount: 0,
+        visibleCount: 0
+      });
+    }
+
+    const classRow = classMap.get(classKey);
+    classRow.expectedCount += 1;
+
+    if (visibleStudentIds.has(getRecordId(student))) {
+      classRow.visibleCount += 1;
+    }
+  });
+
+  return Array.from(classMap.values())
+    .sort(
+      (firstRow, secondRow) =>
+        firstRow.session.localeCompare(secondRow.session) ||
+        firstRow.className.localeCompare(secondRow.className)
+    )
+    .map((classRow) => {
+      const missingCount = Math.max(
+        classRow.expectedCount - classRow.visibleCount,
+        0
+      );
+      const status =
+        statusForAll || (missingCount === 0 ? "live" : "attention");
+
+      return buildClassSummaryRow({
+        id: classRow.id,
+        className: classRow.className,
+        session: classRow.session,
+        term,
+        status,
+        expectedLabel,
+        expectedCount: classRow.expectedCount,
+        visibleLabel,
+        visibleCount: classRow.visibleCount,
+        missingLabel,
+        missingCount: status === "not_configured" ? 0 : missingCount,
+        detail
+      });
+    });
+};
+
+const buildFeeReceiptClassSummary = (fees = []) => {
+  const classMap = new Map();
+
+  fees.forEach((fee) => {
+    const student = fee.student || {};
+    const hasStudent = Boolean(fee.student);
+    const classKey = hasStudent
+      ? getStudentClassKey(student)
+      : `orphaned:${normalizeClassName(fee.class)}:${fee.session || ""}`;
+
+    if (!classMap.has(classKey)) {
+      classMap.set(classKey, {
+        id: classKey,
+        className: hasStudent
+          ? formatStudentClassName(student)
+          : fee.class
+            ? fee.class.toString().toUpperCase()
+            : "Missing student link",
+        session: hasStudent ? student.current_session || "" : fee.session || "",
+        paymentCount: 0,
+        studentIds: new Set(),
+        brokenCount: 0
+      });
+    }
+
+    const classRow = classMap.get(classKey);
+    classRow.paymentCount += 1;
+
+    if (hasStudent) {
+      classRow.studentIds.add(getRecordId(student));
+    } else {
+      classRow.brokenCount += 1;
+    }
+  });
+
+  return Array.from(classMap.values())
+    .sort(
+      (firstRow, secondRow) =>
+        firstRow.session.localeCompare(secondRow.session) ||
+        firstRow.className.localeCompare(secondRow.className)
+    )
+    .map((classRow) =>
+      buildClassSummaryRow({
+        id: classRow.id,
+        className: classRow.className,
+        session: classRow.session,
+        status: classRow.brokenCount > 0 ? "attention" : "live",
+        expectedLabel: "Payments",
+        expectedCount: classRow.paymentCount,
+        visibleLabel: "Students",
+        visibleCount: classRow.studentIds.size,
+        missingLabel: "Broken",
+        missingCount: classRow.brokenCount
+      })
+    );
+};
+
 const getMissingStudentSamples = (students = []) =>
   students.slice(0, 8).map((student) => ({
     id: getRecordId(student),
     name: student.full_name || "Unnamed student",
-    detail: student.admission_no || "Admission number not set"
+    detail: `${student.admission_no || "Admission number not set"} | ${formatStudentClassName(student)}`
   }));
 
 const getTeacherSamples = (teachers = []) =>
   teachers.slice(0, 8).map((teacher) => ({
     id: getRecordId(teacher),
     name: teacher.full_name || "Unnamed teacher",
-    detail: teacher.username || "Username not set"
+    detail: `${teacher.username || "Username not set"} | ${
+      formatClassName(teacher.assigned_class_record) ||
+      teacher.assigned_class ||
+      "Class not set"
+    }`
   }));
 
 const createPortalVisibilityController = () => {
@@ -133,6 +300,7 @@ const createPortalVisibilityController = () => {
     access = {},
     metrics = [],
     issues = [],
+    classSummary = [],
     samples = []
   }) => ({
     key,
@@ -144,6 +312,7 @@ const createPortalVisibilityController = () => {
     access,
     metrics,
     issues,
+    class_summary: classSummary,
     samples
   });
 
@@ -214,6 +383,24 @@ const buildStudentResultsCheck = ({
     : issues.length > 0
       ? "attention"
       : "live";
+  const classSummary = configured
+    ? buildStudentClassSummary({
+        students: expectedStudents,
+        visibleStudentIds,
+        expectedLabel: "Students",
+        visibleLabel: "Results",
+        missingLabel: "Missing",
+        term: access?.term || ""
+      })
+    : buildStudentClassSummary({
+        students: activeStudents,
+        visibleStudentIds: new Set(),
+        statusForAll: "not_configured",
+        expectedLabel: "Students",
+        visibleLabel: "Results",
+        missingLabel: "Missing",
+        detail: "Set active result session and term"
+      });
 
   return buildCheck({
     key: "student_results",
@@ -231,6 +418,7 @@ const buildStudentResultsCheck = ({
       buildMetric("Missing Results", missingStudents.length)
     ],
     issues,
+    classSummary,
     samples: [
       {
         label: "Missing student results",
@@ -300,6 +488,23 @@ const buildCumulativeResultsCheck = ({
     : issues.length > 0
       ? "attention"
       : "live";
+  const classSummary = configured
+    ? buildStudentClassSummary({
+        students: expectedStudents,
+        visibleStudentIds,
+        expectedLabel: "Students",
+        visibleLabel: "Cumulative",
+        missingLabel: "Missing"
+      })
+    : buildStudentClassSummary({
+        students: activeStudents,
+        visibleStudentIds: new Set(),
+        statusForAll: "not_configured",
+        expectedLabel: "Students",
+        visibleLabel: "Cumulative",
+        missingLabel: "Missing",
+        detail: "Set active cumulative result session"
+      });
 
   return buildCheck({
     key: "cumulative_results",
@@ -316,6 +521,7 @@ const buildCumulativeResultsCheck = ({
       buildMetric("Missing Results", missingStudents.length)
     ],
     issues,
+    classSummary,
     samples: [
       {
         label: "Missing cumulative results",
@@ -366,6 +572,7 @@ const buildFeeReceiptsCheck = ({
 
   const status =
     fees.length > 0 && orphanedFees.length === 0 ? "live" : "attention";
+  const classSummary = buildFeeReceiptClassSummary(fees);
 
   return buildCheck({
     key: "fee_receipts",
@@ -384,6 +591,7 @@ const buildFeeReceiptsCheck = ({
       buildMetric("Broken Student Links", orphanedFees.length)
     ],
     issues,
+    classSummary,
     samples: [
       {
         label: "Latest visible payment",
@@ -445,6 +653,20 @@ const buildTeacherClassListCheck = ({
 
     return classRecordId && classIdsWithStudents.has(classRecordId);
   });
+  const teacherCountByClassId = new Map();
+
+  activeFormTeachers.forEach((teacher) => {
+    const classRecordId = getRecordId(teacher.assigned_class_record);
+
+    if (!classRecordId) {
+      return;
+    }
+
+    teacherCountByClassId.set(
+      classRecordId,
+      (teacherCountByClassId.get(classRecordId) || 0) + 1
+    );
+  });
 
   if (activeFormTeachers.length === 0) {
     addIssue({
@@ -497,6 +719,43 @@ const buildTeacherClassListCheck = ({
 
   const status =
     visibleClassLists.length > 0 && issues.length === 0 ? "live" : "attention";
+  const classSummary = [
+    ...classStudentRows.map((row) => {
+      const classRecordId = getRecordId(row.classRecord);
+      const formTeacherCount = teacherCountByClassId.get(classRecordId) || 0;
+
+      return buildClassSummaryRow({
+        id: classRecordId,
+        className: formatClassName(row.classRecord),
+        session: row.classRecord.session || "",
+        status: formTeacherCount > 0 ? "live" : "attention",
+        expectedLabel: "Students",
+        expectedCount: row.students.length,
+        visibleLabel: "Form Teachers",
+        visibleCount: formTeacherCount,
+        missingLabel: "Missing Teacher",
+        missingCount: formTeacherCount > 0 ? 0 : 1
+      });
+    }),
+    ...teachersWithEmptyClass.map((teacher) => {
+      const classRecord = teacher.assigned_class_record || {};
+      const classRecordId = getRecordId(classRecord);
+
+      return buildClassSummaryRow({
+        id: `empty-${getRecordId(teacher)}-${classRecordId}`,
+        className: formatClassName(classRecord),
+        session: classRecord.session || teacher.session || "",
+        status: "attention",
+        expectedLabel: "Students",
+        expectedCount: 0,
+        visibleLabel: "Form Teachers",
+        visibleCount: 1,
+        missingLabel: "Missing",
+        missingCount: 0,
+        detail: "Assigned class has no active students"
+      });
+    })
+  ];
 
   return buildCheck({
     key: "teacher_class_list",
@@ -514,6 +773,7 @@ const buildTeacherClassListCheck = ({
       buildMetric("Teachers Without Class", teachersWithoutClass.length)
     ],
     issues,
+    classSummary,
     samples: [
       {
         label: "Teachers without class",
@@ -584,6 +844,71 @@ const buildTeacherPdfCheck = ({
 
     return !visibleRecordKeys.has(`${teacherId}:${classRecordId}`);
   });
+  const classSummaryTeachers = configured
+    ? expectedTeachers
+    : activeFormTeachers.filter((teacher) =>
+        Boolean(getRecordId(teacher.assigned_class_record))
+      );
+  const expectedPairKeys = new Set(
+    expectedTeachers.map(
+      (teacher) =>
+        `${getRecordId(teacher)}:${getRecordId(teacher.assigned_class_record)}`
+    )
+  );
+  const classSummary = [
+    ...classSummaryTeachers.map((teacher) => {
+      const teacherId = getRecordId(teacher);
+      const classRecord = teacher.assigned_class_record || {};
+      const classRecordId = getRecordId(classRecord);
+      const visible = visibleRecordKeys.has(`${teacherId}:${classRecordId}`);
+      const rowStatus = !configured
+        ? "not_configured"
+        : visible
+          ? "live"
+          : "attention";
+
+      return buildClassSummaryRow({
+        id: `${key}-${teacherId}-${classRecordId}`,
+        className: formatClassName(classRecord),
+        session: configured ? accessSession : teacher.session || "",
+        term: configured ? accessTerm : "",
+        status: rowStatus,
+        expectedLabel: "Teachers",
+        expectedCount: 1,
+        visibleLabel: "Uploads",
+        visibleCount: visible ? 1 : 0,
+        missingLabel: "Missing",
+        missingCount: configured && !visible ? 1 : 0,
+        detail: teacher.username || teacher.full_name || ""
+      });
+    }),
+    ...blockedRecords
+      .filter((record) => {
+        const pairKey = `${getRecordId(record.assigned_teacher)}:${getRecordId(
+          record.class_record
+        )}`;
+
+        return !expectedPairKeys.has(pairKey);
+      })
+      .map((record) =>
+        buildClassSummaryRow({
+          id: `${key}-blocked-${getRecordId(record)}`,
+          className: record.class
+            ? record.class.toString().toUpperCase()
+            : "Class not set",
+          session: record.session || accessSession || "",
+          term: record.term || accessTerm || "",
+          status: "attention",
+          expectedLabel: "Teachers",
+          expectedCount: 0,
+          visibleLabel: "Uploads",
+          visibleCount: 0,
+          missingLabel: "Blocked",
+          missingCount: 1,
+          detail: "Upload exists but is not reachable by the assigned teacher"
+        })
+      )
+  ];
 
   if (!configured) {
     addIssue({
@@ -650,6 +975,7 @@ const buildTeacherPdfCheck = ({
       buildMetric("Blocked Uploads", blockedRecords.length)
     ],
     issues,
+    classSummary,
     samples: [
       {
         label: `Missing ${label.toLowerCase()} uploads`,

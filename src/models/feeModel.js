@@ -93,5 +93,28 @@ const feeSchema = new mongoose.Schema(
 
 feeSchema.index({ student: 1, session: 1, term: 1, payment_date: -1 });
 feeSchema.index({ class_record: 1, session: 1, term: 1, fee_category: 1 });
+feeSchema.index(
+  {
+    receipt_no: "text",
+    class: "text",
+    session: "text",
+    term: "text",
+    fee_category: "text",
+    payment_method: "text",
+    note: "text"
+  },
+  {
+    name: "fee_search_text",
+    weights: {
+      receipt_no: 10,
+      class: 5,
+      session: 4,
+      term: 4,
+      fee_category: 3,
+      payment_method: 2,
+      note: 1
+    }
+  }
+);
 
 module.exports = mongoose.model("Fee", feeSchema);

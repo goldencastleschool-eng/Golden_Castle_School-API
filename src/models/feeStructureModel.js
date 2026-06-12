@@ -57,5 +57,22 @@ feeStructureSchema.index(
   { class_record: 1, session: 1, term: 1, fee_category: 1 },
   { unique: true }
 );
+feeStructureSchema.index(
+  {
+    session: "text",
+    term: "text",
+    fee_category: "text",
+    "items.name": "text"
+  },
+  {
+    name: "fee_structure_search_text",
+    weights: {
+      "items.name": 8,
+      session: 4,
+      term: 4,
+      fee_category: 3
+    }
+  }
+);
 
 module.exports = mongoose.model("FeeStructure", feeStructureSchema);

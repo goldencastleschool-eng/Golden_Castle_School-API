@@ -41,6 +41,22 @@ const cumulativeResultSchema = new mongoose.Schema(
   }
 );
 
+cumulativeResultSchema.index(
+  {
+    class: "text",
+    session: "text",
+    file_name: "text"
+  },
+  {
+    name: "cumulative_result_search_text",
+    weights: {
+      class: 6,
+      session: 4,
+      file_name: 2
+    }
+  }
+);
+
 module.exports = mongoose.model(
   "CumulativeResult",
   cumulativeResultSchema

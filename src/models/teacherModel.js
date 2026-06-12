@@ -84,4 +84,26 @@ const teacherSchema = new mongoose.Schema(
   }
 );
 
+teacherSchema.index(
+  {
+    full_name: "text",
+    username: "text",
+    assigned_class: "text",
+    session: "text",
+    assignment_type: "text",
+    status: "text"
+  },
+  {
+    name: "teacher_search_text",
+    weights: {
+      full_name: 10,
+      username: 8,
+      assigned_class: 5,
+      session: 2,
+      assignment_type: 2,
+      status: 1
+    }
+  }
+);
+
 module.exports = mongoose.model("Teacher", teacherSchema);

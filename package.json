@@ -5,6 +5,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
+    "indexes:search:report": "node src/scripts/manageSearchIndexes.js --report",
+    "indexes:search:sync": "node src/scripts/manageSearchIndexes.js --sync",
     "migrate:results": "node src/scripts/migrateCloudinaryResultsToDb.js",
     "migrate:pdf-gridfs": "node src/scripts/migratePdfDataToGridFS.js",
     "test": "echo \"Error: no test specified\" && exit 1"
