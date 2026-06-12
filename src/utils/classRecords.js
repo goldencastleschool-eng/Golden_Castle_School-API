@@ -1,6 +1,10 @@
 const Class = require("../models/classModel");
 const Result = require("../models/resultModel");
 const Student = require("../models/studentModel");
+const {
+  inferClassSection,
+  normalizeClassSection
+} = require("./classSections");
 
 const normalizeClassName = (name = "") =>
   name.toString().trim().toLowerCase().replace(/\s+/g, "");
@@ -28,9 +32,11 @@ const findClassRecord = async (name, session) => {
   });
 };
 
-const ensureClassRecord = async (name, session) => {
+const ensureClassRecord = async (name, session, section = "") => {
   const normalizedName = normalizeClassName(name);
   const normalizedSession = normalizeSession(session);
+  const normalizedSection =
+    normalizeClassSection(section) || inferClassSection(normalizedName);
 
   if (!normalizedName || !normalizedSession) {
     return null;
@@ -44,13 +50,19 @@ const ensureClassRecord = async (name, session) => {
   );
 
   if (existingClass) {
+    if (!existingClass.section && normalizedSection) {
+      existingClass.section = normalizedSection;
+      await existingClass.save();
+    }
+
     return existingClass;
   }
 
   try {
     return await Class.create({
       name: normalizedName,
-      session: normalizedSession
+      session: normalizedSession,
+      ...(normalizedSection ? { section: normalizedSection } : {})
     });
   } catch (error) {
     if (error.code === 11000) {

@@ -10,6 +10,10 @@ const {
   normalizeSession,
   syncLegacyClassesToDynamicRecords
 } = require("../utils/classRecords");
+const {
+  inferClassSection,
+  normalizeClassSection
+} = require("../utils/classSections");
 
 const getClasses = async (req, res) => {
   try {
@@ -35,6 +39,8 @@ const createClass = async (req, res) => {
   try {
     const name = normalizeClassName(req.body.name);
     const session = normalizeSession(req.body.session);
+    const section =
+      normalizeClassSection(req.body.section) || inferClassSection(name);
 
     if (!name) {
       return res.status(400).json({
@@ -45,6 +51,12 @@ const createClass = async (req, res) => {
     if (!session) {
       return res.status(400).json({
         message: "Session is required"
+      });
+    }
+
+    if (!section) {
+      return res.status(400).json({
+        message: "Class section is required"
       });
     }
 
@@ -59,7 +71,7 @@ const createClass = async (req, res) => {
       });
     }
 
-    const classRecord = await ensureClassRecord(name, session);
+    const classRecord = await ensureClassRecord(name, session, section);
 
     res.status(201).json(classRecord);
 
@@ -74,6 +86,8 @@ const updateClass = async (req, res) => {
   try {
     const name = normalizeClassName(req.body.name);
     const session = normalizeSession(req.body.session);
+    const section =
+      normalizeClassSection(req.body.section) || inferClassSection(name);
 
     if (!name) {
       return res.status(400).json({
@@ -84,6 +98,12 @@ const updateClass = async (req, res) => {
     if (!session) {
       return res.status(400).json({
         message: "Session is required"
+      });
+    }
+
+    if (!section) {
+      return res.status(400).json({
+        message: "Class section is required"
       });
     }
 
@@ -113,6 +133,7 @@ const updateClass = async (req, res) => {
     const oldSession = classRecord.session;
     classRecord.name = name;
     classRecord.session = session;
+    classRecord.section = section;
     const updatedClass = await classRecord.save();
 
     await Student.updateMany(

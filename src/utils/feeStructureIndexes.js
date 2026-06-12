@@ -20,7 +20,7 @@ const ensureFeeStructureIndexes = async () => {
     await FeeStructure.collection.dropIndex(index.name);
   }
 
-  await FeeStructure.createIndexes();
+  await FeeStructure.syncIndexes();
 };
 
 module.exports = {

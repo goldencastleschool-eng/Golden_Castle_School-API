@@ -1,5 +1,6 @@
 const FeeStructure = require("../models/feeStructureModel");
 const Class = require("../models/classModel");
+const Fee = require("../models/feeModel");
 const { ensureFeeStructureIndexes } = require("../utils/feeStructureIndexes");
 
 const populateClass = {
@@ -11,6 +12,20 @@ const validFeeCategories = ["new", "returning"];
 
 const normalizeFeeCategory = (feeCategory = "") =>
   feeCategory.toString().trim().toLowerCase();
+
+const formatFeeCategoryLabel = (feeCategory = "") => {
+  const normalizedCategory = normalizeFeeCategory(feeCategory);
+
+  if (normalizedCategory === "new") {
+    return "Newly admitted";
+  }
+
+  if (normalizedCategory === "returning") {
+    return "Returning/old";
+  }
+
+  return "Selected";
+};
 
 const isLegacyDuplicateIndexError = (error) => {
   const keyFields = Object.keys(error.keyPattern || {});
@@ -24,11 +39,11 @@ const isLegacyDuplicateIndexError = (error) => {
   );
 };
 
-const duplicateFeeStructureMessage =
-  "Fee structure already exists for this class, session, term, and fee category";
+const getDuplicateFeeStructureMessage = (feeCategory) =>
+  `A payment structure for ${formatFeeCategoryLabel(feeCategory).toLowerCase()} students already exists for this class, session, and term. Use Edit to change it.`;
 
 const legacyFeeStructureIndexMessage =
-  "The database still has an old payment-structure index. Restart the backend, then create the payment structure again.";
+  "The database still has an old payment-structure index that allows only one structure per class, session, and term. Restart or redeploy the backend so it can rebuild the index, then create the payment structure again.";
 
 const normalizeItems = (items = []) => {
   if (!Array.isArray(items)) {
@@ -121,6 +136,151 @@ const validateFeeStructurePayload = async (payload) => {
   };
 };
 
+const findExistingFeeStructure = (validation, excludedId = "") => {
+  const query = {
+    class_record: validation.classRecord._id,
+    session: validation.session,
+    term: validation.term,
+    fee_category: validation.feeCategory
+  };
+
+  if (excludedId) {
+    query._id = {
+      $ne: excludedId
+    };
+  }
+
+  return FeeStructure.findOne(query);
+};
+
+const getRecordId = (record) => record?._id || record || "";
+
+const buildFeeQueryForStructure = (feeStructure) => ({
+  class_record: getRecordId(feeStructure.class_record),
+  session: feeStructure.session,
+  term: feeStructure.term,
+  fee_category: feeStructure.fee_category || "returning"
+});
+
+const buildFeeQueryForValidation = (validation) => ({
+  class_record: validation.classRecord._id,
+  session: validation.session,
+  term: validation.term,
+  fee_category: validation.feeCategory
+});
+
+const hasSameStructureKey = (feeStructure, validation) =>
+  getRecordId(feeStructure.class_record).toString() ===
+    validation.classRecord._id.toString() &&
+  feeStructure.session === validation.session &&
+  feeStructure.term === validation.term &&
+  (feeStructure.fee_category || "returning") === validation.feeCategory;
+
+const findOverpaidStudentForStructure = async (feeQuery, expectedAmount) => {
+  const [overpaidStudent] = await Fee.aggregate([
+    {
+      $match: feeQuery
+    },
+    {
+      $group: {
+        _id: "$student",
+        paid: {
+          $sum: "$amount"
+        }
+      }
+    },
+    {
+      $match: {
+        paid: {
+          $gt: expectedAmount
+        }
+      }
+    },
+    {
+      $limit: 1
+    }
+  ]);
+
+  return overpaidStudent;
+};
+
+const validateStructureUpdateAgainstFees = async (feeStructure, validation) => {
+  const feeQuery = buildFeeQueryForStructure(feeStructure);
+  const recordedFeeCount = await Fee.countDocuments(feeQuery);
+
+  if (recordedFeeCount === 0) {
+    return {
+      feeQuery,
+      recordedFeeCount
+    };
+  }
+
+  if (!hasSameStructureKey(feeStructure, validation)) {
+    return {
+      message:
+        "This payment structure already has recorded fee payments. You can edit the fee items and amount, but cannot change its class, session, term, or student category.",
+      feeQuery,
+      recordedFeeCount
+    };
+  }
+
+  const overpaidStudent = await findOverpaidStudentForStructure(
+    feeQuery,
+    validation.amount
+  );
+
+  if (overpaidStudent) {
+    return {
+      message:
+        `This payment structure cannot be reduced to ${validation.amount} because at least one student has already paid ${overpaidStudent.paid}.`,
+      feeQuery,
+      recordedFeeCount
+    };
+  }
+
+  return {
+    feeQuery,
+    recordedFeeCount
+  };
+};
+
+const syncRecordedFeesToStructure = (feeQuery, validation) =>
+  Fee.updateMany(
+    feeQuery,
+    {
+      $set: {
+        expected_amount_at_payment: validation.amount,
+        expected_items_at_payment: validation.items
+      }
+    }
+  );
+
+const resolveDuplicateFeeStructureMessage = async (validation, error) => {
+  if (!validation?.classRecord) {
+    return isLegacyDuplicateIndexError(error)
+      ? legacyFeeStructureIndexMessage
+      : "Fee structure already exists";
+  }
+
+  const existingSameCategory = await findExistingFeeStructure(validation);
+
+  if (existingSameCategory) {
+    return getDuplicateFeeStructureMessage(validation.feeCategory);
+  }
+
+  const existingAnyCategory = await FeeStructure.findOne({
+    class_record: validation.classRecord._id,
+    session: validation.session,
+    term: validation.term
+  });
+
+  if (existingAnyCategory || isLegacyDuplicateIndexError(error)) {
+    return legacyFeeStructureIndexMessage;
+  }
+
+  return getDuplicateFeeStructureMessage(validation.feeCategory);
+};
+
 const getFeeStructures = async (req, res) => {
   try {
     const feeStructures = await FeeStructure.find()
@@ -141,14 +301,24 @@ const getFeeStructures = async (req, res) => {
 };
 
 const createFeeStructure = async (req, res) => {
+  let validation;
+
   try {
     await ensureFeeStructureIndexes();
 
-    const validation = await validateFeeStructurePayload(req.body);
+    validation = await validateFeeStructurePayload(req.body);
 
     if (validation.message) {
       return res.status(400).json({
         message: validation.message
+      });
+    }
+
+    const existingFeeStructure = await findExistingFeeStructure(validation);
+
+    if (existingFeeStructure) {
+      return res.status(400).json({
+        message: getDuplicateFeeStructureMessage(validation.feeCategory)
       });
     }
 
@@ -168,10 +338,13 @@ const createFeeStructure = async (req, res) => {
 
   } catch (error) {
     if (error.code === 11000) {
+      const message = await resolveDuplicateFeeStructureMessage(
+        validation,
+        error
+      );
+
       return res.status(400).json({
-        message: isLegacyDuplicateIndexError(error)
-          ? legacyFeeStructureIndexMessage
-          : duplicateFeeStructureMessage
+        message
       });
     }
 
@@ -182,19 +355,34 @@ const createFeeStructure = async (req, res) => {
 };
 
 const upsertBothFeeStructures = async (req, res) => {
+  let activeValidation;
+
   try {
     await ensureFeeStructureIndexes();
 
-    const categories = [
-      {
-        fee_category: "new",
-        items: req.body.new_items
-      },
-      {
-        fee_category: "returning",
-        items: req.body.returning_items
-      }
-    ];
+    const categories = req.body.fee_category
+      ? [
+          {
+            fee_category: req.body.fee_category,
+            items: req.body.items
+          }
+        ]
+      : [
+          Array.isArray(req.body.new_items) && {
+            fee_category: "new",
+            items: req.body.new_items
+          },
+          Array.isArray(req.body.returning_items) && {
+            fee_category: "returning",
+            items: req.body.returning_items
+          }
+        ].filter(Boolean);
+
+    if (categories.length === 0) {
+      return res.status(400).json({
+        message: "Select at least one student category and fee item list"
+      });
+    }
 
     const validations = [];
 
@@ -209,7 +397,7 @@ const upsertBothFeeStructures = async (req, res) => {
 
       if (validation.message) {
         return res.status(400).json({
-          message: `${categoryPayload.fee_category === "new" ? "Newly admitted" : "Returning/old"} structure: ${validation.message}`
+          message: `${formatFeeCategoryLabel(categoryPayload.fee_category)} structure: ${validation.message}`
         });
       }
 
@@ -219,6 +407,26 @@ const upsertBothFeeStructures = async (req, res) => {
     const savedStructures = [];
 
     for (const validation of validations) {
+      activeValidation = validation;
+      const existingFeeStructure = await FeeStructure.findOne(
+        buildFeeQueryForValidation(validation)
+      );
+      const linkedFeeResult = existingFeeStructure
+        ? await validateStructureUpdateAgainstFees(
+            existingFeeStructure,
+            validation
+          )
+        : {
+            feeQuery: buildFeeQueryForValidation(validation),
+            recordedFeeCount: 0
+          };
+
+      if (linkedFeeResult.message) {
+        return res.status(400).json({
+          message: linkedFeeResult.message
+        });
+      }
+
       const feeStructure = await FeeStructure.findOneAndUpdate(
         {
           class_record: validation.classRecord._id,
@@ -241,20 +449,30 @@ const upsertBothFeeStructures = async (req, res) => {
         }
       ).populate(populateClass);
 
+      if (linkedFeeResult.recordedFeeCount > 0) {
+        await syncRecordedFeesToStructure(linkedFeeResult.feeQuery, validation);
+      }
+
       savedStructures.push(feeStructure);
     }
 
     res.status(200).json({
-      message: "Payment structures saved for newly admitted and returning students",
+      message:
+        savedStructures.length === 1
+          ? `Payment structure saved for ${formatFeeCategoryLabel(savedStructures[0].fee_category)} students`
+          : "Payment structures saved for newly admitted and returning students",
       feeStructures: savedStructures
     });
 
   } catch (error) {
     if (error.code === 11000) {
+      const message = await resolveDuplicateFeeStructureMessage(
+        activeValidation,
+        error
+      );
+
       return res.status(400).json({
-        message: isLegacyDuplicateIndexError(error)
-          ? legacyFeeStructureIndexMessage
-          : duplicateFeeStructureMessage
+        message
       });
     }
 
@@ -265,6 +483,8 @@ const upsertBothFeeStructures = async (req, res) => {
 };
 
 const updateFeeStructure = async (req, res) => {
+  let validation;
+
   try {
     await ensureFeeStructureIndexes();
 
@@ -276,11 +496,33 @@ const updateFeeStructure = async (req, res) => {
       });
     }
 
-    const validation = await validateFeeStructurePayload(req.body);
+    validation = await validateFeeStructurePayload(req.body);
 
     if (validation.message) {
       return res.status(400).json({
         message: validation.message
+      });
+    }
+
+    const existingFeeStructure = await findExistingFeeStructure(
+      validation,
+      feeStructure._id
+    );
+
+    if (existingFeeStructure) {
+      return res.status(400).json({
+        message: getDuplicateFeeStructureMessage(validation.feeCategory)
+      });
+    }
+
+    const linkedFeeResult = await validateStructureUpdateAgainstFees(
+      feeStructure,
+      validation
+    );
+
+    if (linkedFeeResult.message) {
+      return res.status(400).json({
+        message: linkedFeeResult.message
       });
     }
 
@@ -293,6 +535,10 @@ const updateFeeStructure = async (req, res) => {
 
     await feeStructure.save();
 
+    if (linkedFeeResult.recordedFeeCount > 0) {
+      await syncRecordedFeesToStructure(linkedFeeResult.feeQuery, validation);
+    }
+
     const updatedFeeStructure = await FeeStructure.findById(feeStructure._id)
       .populate(populateClass);
 
@@ -300,10 +546,13 @@ const updateFeeStructure = async (req, res) => {
 
   } catch (error) {
     if (error.code === 11000) {
+      const message = await resolveDuplicateFeeStructureMessage(
+        validation,
+        error
+      );
+
       return res.status(400).json({
-        message: isLegacyDuplicateIndexError(error)
-          ? legacyFeeStructureIndexMessage
-          : duplicateFeeStructureMessage
+        message
       });
     }
 
@@ -320,6 +569,17 @@ const deleteFeeStructure = async (req, res) => {
     if (!feeStructure) {
       return res.status(404).json({
         message: "Fee structure not found"
+      });
+    }
+
+    const recordedFeeCount = await Fee.countDocuments(
+      buildFeeQueryForStructure(feeStructure)
+    );
+
+    if (recordedFeeCount > 0) {
+      return res.status(400).json({
+        message:
+          `Cannot delete this payment structure because ${recordedFeeCount} fee payment record(s) are linked to it. Delete or correct those fee payments first.`
       });
     }
 

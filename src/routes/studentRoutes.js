@@ -5,6 +5,7 @@ const router = express.Router();
 const {
   registerStudent,
   getAllStudents,
+  getTeacherClassStudents,
   updateStudent,
   resetStudentPassword,
   deleteStudent,
@@ -24,6 +25,14 @@ router.post("/", protect, authorizeRoles("admin"), registerStudent);
 
 // ONLY ADMIN CAN VIEW ALL STUDENTS
 router.get("/", protect, authorizeRoles("admin"), getAllStudents);
+
+// ONLY FORM TEACHERS CAN VIEW THEIR ASSIGNED CLASS LIST
+router.get(
+  "/teacher/class-list",
+  protect,
+  authorizeRoles("teacher"),
+  getTeacherClassStudents
+);
 
 // ONLY ADMIN CAN PROMOTE STUDENTS BY CLASS
 router.post("/promote", protect, authorizeRoles("admin"), promoteStudentsByClass);

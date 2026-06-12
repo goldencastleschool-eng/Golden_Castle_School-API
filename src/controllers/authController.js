@@ -3,6 +3,7 @@ const Admin = require("../models/adminModel");
 const Student = require("../models/studentModel");
 const Teacher = require("../models/teacherModel");
 const generateToken = require("../utils/generateToken");
+const { getTeacherAssignmentType } = require("../utils/teacherAssignments");
 
 // ======================
 // ADMIN LOGIN
@@ -148,6 +149,7 @@ const teacherLogin = async (req, res) => {
         session: teacher.session,
         assigned_class: teacher.assigned_class,
         assigned_class_record: teacher.assigned_class_record,
+        assignment_type: getTeacherAssignmentType(teacher),
         status: teacher.status,
         role: "teacher",
       },

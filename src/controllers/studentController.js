@@ -5,12 +5,14 @@ const Student = require("../models/studentModel");
 const Result = require("../models/resultModel");
 
 const Class = require("../models/classModel");
+const Teacher = require("../models/teacherModel");
 
 const {
   ensureClassRecord,
   normalizeClassName,
   normalizeSession
 } = require("../utils/classRecords");
+const { isFormTeacher } = require("../utils/teacherAssignments");
 
 const sanitizeStudent = (student) => {
   const safeStudent = student.toObject
@@ -21,6 +23,15 @@ const sanitizeStudent = (student) => {
 
   return safeStudent;
 };
+
+const sanitizeTeacherClassOwner = (teacher) => ({
+  _id: teacher._id,
+  full_name: teacher.full_name,
+  username: teacher.username,
+  session: teacher.session,
+  assigned_class: teacher.assigned_class,
+  assigned_class_record: teacher.assigned_class_record
+});
 
 const activeStudentStatusQuery = {
   $or: [
@@ -297,6 +308,69 @@ const updateStudent = async (req, res) => {
     );
 
     res.json(sanitizeStudent(updatedStudent));
+
+  } catch (error) {
+    res.status(500).json({
+      error: error.message
+    });
+  }
+};
+
+const getTeacherClassStudents = async (req, res) => {
+  try {
+    const teacher = await Teacher.findById(req.user.id).populate(
+      "assigned_class_record"
+    );
+
+    if (!teacher) {
+      return res.status(404).json({
+        message: "Teacher not found"
+      });
+    }
+
+    if (teacher.status === "inactive") {
+      return res.status(403).json({
+        message: "This teacher account is inactive"
+      });
+    }
+
+    if (!isFormTeacher(teacher)) {
+      return res.status(403).json({
+        message: "Class list is available to form teachers only"
+      });
+    }
+
+    if (!teacher.assigned_class_record) {
+      return res.status(400).json({
+        message: "No active class is assigned to this form teacher"
+      });
+    }
+
+    const classRecord = teacher.assigned_class_record;
+    const candidateStudents = await Student.find({
+      $and: [
+        activeStudentStatusQuery,
+        {
+          $or: [
+            { class_record: classRecord._id },
+            { current_session: classRecord.session }
+          ]
+        }
+      ]
+    })
+      .select("-password")
+      .sort({
+        full_name: 1
+      });
+    const students = candidateStudents.filter((student) =>
+      studentBelongsToClassRecord(student, classRecord)
+    );
+
+    res.json({
+      class_record: classRecord,
+      teacher: sanitizeTeacherClassOwner(teacher),
+      students: students.map(sanitizeStudent)
+    });
 
   } catch (error) {
     res.status(500).json({
@@ -720,6 +794,7 @@ const markStudentsLeftSchool = async (req, res) => {
 module.exports = {
   registerStudent,
   getAllStudents,
+  getTeacherClassStudents,
   updateStudent,
   resetStudentPassword,
   deleteStudent,

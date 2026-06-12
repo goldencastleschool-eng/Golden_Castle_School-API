@@ -2,11 +2,18 @@ const bcrypt = require("bcryptjs");
 
 const Teacher = require("../models/teacherModel");
 const Class = require("../models/classModel");
+const {
+  TEACHER_ASSIGNMENT_TYPES,
+  canUseAssignmentTypeForClass,
+  getTeacherAssignmentType,
+  normalizeTeacherAssignmentType
+} = require("../utils/teacherAssignments");
 
 const sanitizeTeacher = (teacher) => {
   const safeTeacher = teacher.toObject ? teacher.toObject() : { ...teacher };
 
   delete safeTeacher.password;
+  safeTeacher.assignment_type = getTeacherAssignmentType(safeTeacher);
 
   return safeTeacher;
 };
@@ -34,6 +41,42 @@ const buildTeacherUsername = async (fullName) => {
   throw new Error("Unable to generate a unique teacher username");
 };
 
+const resolveRequestedAssignmentType = (
+  assignmentType,
+  fallbackAssignmentType = TEACHER_ASSIGNMENT_TYPES.FORM
+) => {
+  if (
+    assignmentType === undefined ||
+    assignmentType === null ||
+    assignmentType === ""
+  ) {
+    return {
+      assignmentType: fallbackAssignmentType
+    };
+  }
+
+  const normalizedAssignmentType =
+    normalizeTeacherAssignmentType(assignmentType);
+
+  if (!normalizedAssignmentType) {
+    return {
+      error: "Teacher assignment type is invalid"
+    };
+  }
+
+  return {
+    assignmentType: normalizedAssignmentType
+  };
+};
+
+const validateAssignmentTypeForClass = (assignmentType, selectedClass) => {
+  if (canUseAssignmentTypeForClass(assignmentType, selectedClass)) {
+    return "";
+  }
+
+  return "Class teacher assignment is only available for secondary classes. Basic, nursery, and pre nursery classes must use form teacher.";
+};
+
 const addAssignmentHistory = (teacher, reason = "Assignment changed") => {
   if (!teacher.assigned_class_record) {
     return;
@@ -42,6 +85,7 @@ const addAssignmentHistory = (teacher, reason = "Assignment changed") => {
   teacher.assignment_history.push({
     assigned_class: teacher.assigned_class,
     assigned_class_record: teacher.assigned_class_record,
+    assignment_type: getTeacherAssignmentType(teacher),
     session: teacher.session,
     status: teacher.status,
     ended_at: new Date(),
@@ -58,7 +102,7 @@ const getTeachers = async (req, res) => {
         createdAt: -1
       });
 
-    res.json(teachers);
+    res.json(teachers.map(sanitizeTeacher));
 
   } catch (error) {
     res.status(500).json({
@@ -73,6 +117,7 @@ const createTeacher = async (req, res) => {
       full_name,
       session,
       assigned_class_record,
+      assignment_type,
       password
     } = req.body;
 
@@ -96,6 +141,27 @@ const createTeacher = async (req, res) => {
       });
     }
 
+    const requestedAssignment = resolveRequestedAssignmentType(
+      assignment_type
+    );
+
+    if (requestedAssignment.error) {
+      return res.status(400).json({
+        message: requestedAssignment.error
+      });
+    }
+
+    const assignmentValidationMessage = validateAssignmentTypeForClass(
+      requestedAssignment.assignmentType,
+      selectedClass
+    );
+
+    if (assignmentValidationMessage) {
+      return res.status(400).json({
+        message: assignmentValidationMessage
+      });
+    }
+
     const hashedPassword = await bcrypt.hash(password, 10);
     const username = await buildTeacherUsername(full_name);
 
@@ -105,6 +171,7 @@ const createTeacher = async (req, res) => {
       session,
       assigned_class: selectedClass.name,
       assigned_class_record: selectedClass._id,
+      assignment_type: requestedAssignment.assignmentType,
       password: hashedPassword,
       initial_password: hashedPassword
     });
@@ -124,6 +191,7 @@ const updateTeacher = async (req, res) => {
       full_name,
       session,
       assigned_class_record,
+      assignment_type,
       password
     } = req.body;
 
@@ -137,7 +205,9 @@ const updateTeacher = async (req, res) => {
 
     const selectedClass = assigned_class_record
       ? await Class.findById(assigned_class_record)
-      : null;
+      : teacher.assigned_class_record
+        ? await Class.findById(teacher.assigned_class_record)
+        : null;
 
     if ((assigned_class_record || session) && !selectedClass) {
       return res.status(400).json({
@@ -145,9 +215,34 @@ const updateTeacher = async (req, res) => {
       });
     }
 
-    if (selectedClass && selectedClass.session !== session) {
+    if (selectedClass && session && selectedClass.session !== session) {
       return res.status(400).json({
         message: "Assigned class must belong to the selected session"
+      });
+    }
+
+    const previousAssignmentType = getTeacherAssignmentType(teacher);
+    const requestedAssignment = resolveRequestedAssignmentType(
+      assignment_type,
+      previousAssignmentType
+    );
+
+    if (requestedAssignment.error) {
+      return res.status(400).json({
+        message: requestedAssignment.error
+      });
+    }
+
+    const assignmentValidationMessage = selectedClass
+      ? validateAssignmentTypeForClass(
+          requestedAssignment.assignmentType,
+          selectedClass
+        )
+      : "";
+
+    if (assignmentValidationMessage) {
+      return res.status(400).json({
+        message: assignmentValidationMessage
       });
     }
 
@@ -156,11 +251,14 @@ const updateTeacher = async (req, res) => {
       (selectedClass && selectedClass.name !== teacher.assigned_class);
 
     const isReassigningClass =
+      assigned_class_record &&
       selectedClass &&
       teacher.assigned_class_record?.toString() !== selectedClass._id.toString();
+    const isChangingAssignmentType =
+      requestedAssignment.assignmentType !== previousAssignmentType;
 
-    if (isReassigningClass) {
-      addAssignmentHistory(teacher, "Reassigned by admin");
+    if (isReassigningClass || isChangingAssignmentType) {
+      addAssignmentHistory(teacher, "Assignment updated by admin");
     }
 
     teacher.full_name = full_name || teacher.full_name;
@@ -168,6 +266,7 @@ const updateTeacher = async (req, res) => {
     teacher.assigned_class = selectedClass?.name || teacher.assigned_class;
     teacher.assigned_class_record =
       selectedClass?._id || teacher.assigned_class_record;
+    teacher.assignment_type = requestedAssignment.assignmentType;
     teacher.status = "active";
     teacher.deactivated_at = null;
     teacher.deactivation_reason = "";

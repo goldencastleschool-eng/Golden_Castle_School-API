@@ -29,6 +29,12 @@ const teacherSchema = new mongoose.Schema(
       default: null
     },
 
+    assignment_type: {
+      type: String,
+      enum: ["form_teacher", "class_teacher"],
+      default: "form_teacher"
+    },
+
     password: {
       type: String,
       required: true
@@ -60,6 +66,11 @@ const teacherSchema = new mongoose.Schema(
         assigned_class_record: {
           type: mongoose.Schema.Types.ObjectId,
           ref: "Class"
+        },
+        assignment_type: {
+          type: String,
+          enum: ["form_teacher", "class_teacher"],
+          default: "form_teacher"
         },
         session: String,
         status: String,

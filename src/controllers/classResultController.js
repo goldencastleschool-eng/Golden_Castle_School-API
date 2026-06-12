@@ -2,6 +2,7 @@ const ClassResult = require("../models/classResultModel");
 const Class = require("../models/classModel");
 const ResultAccess = require("../models/resultAccessModel");
 const Teacher = require("../models/teacherModel");
+const { isFormTeacher } = require("../utils/teacherAssignments");
 const {
   deletePdfFile,
   sendPdfFile,
@@ -78,6 +79,7 @@ const uploadClassResult = async (req, res) => {
     if (
       !selectedTeacher ||
       selectedTeacher.status === "inactive" ||
+      !isFormTeacher(selectedTeacher) ||
       selectedTeacher.session !== session ||
       !teacherClassId ||
       teacherClassId !== selectedClass._id.toString()

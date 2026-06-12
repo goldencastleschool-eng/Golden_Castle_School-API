@@ -13,6 +13,12 @@ const classSchema = new mongoose.Schema(
       type: String,
       required: true,
       trim: true
+    },
+
+    section: {
+      type: String,
+      enum: ["pre_nursery", "nursery", "basic", "secondary"],
+      default: undefined
     }
   },
   {

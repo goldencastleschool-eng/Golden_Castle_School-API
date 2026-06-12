@@ -4,6 +4,7 @@ const router = express.Router();
 
 const {
   getFees,
+  getMyFees,
   createFee,
   updateFee,
   deleteFee
@@ -13,6 +14,8 @@ const protect = require("../middleware/authMiddleware");
 const authorizeRoles = require("../middleware/roleMiddleware");
 
 router.get("/", protect, authorizeRoles("admin"), getFees);
+
+router.get("/me", protect, authorizeRoles("student"), getMyFees);
 
 router.post("/", protect, authorizeRoles("admin"), createFee);
 
