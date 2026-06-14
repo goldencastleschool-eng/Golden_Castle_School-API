@@ -4,6 +4,7 @@ const router = express.Router();
 
 const {
   adminLogin,
+  executiveLogin,
   studentLogin,
   teacherLogin,
   changeStudentPassword,
@@ -16,6 +17,8 @@ const protect = require("../middleware/authMiddleware");
 const authorizeRoles = require("../middleware/roleMiddleware");
 
 router.post("/admin/login", loginRateLimit, adminLogin);
+
+router.post("/executive/login", loginRateLimit, executiveLogin);
 
 router.post("/student/login", loginRateLimit, studentLogin);
 

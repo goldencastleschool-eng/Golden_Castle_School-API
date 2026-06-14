@@ -1,5 +1,6 @@
 const bcrypt = require("bcryptjs");
 const Admin = require("../models/adminModel");
+const ExecutiveAccount = require("../models/executiveAccountModel");
 const Student = require("../models/studentModel");
 const Teacher = require("../models/teacherModel");
 const generateToken = require("../utils/generateToken");
@@ -31,6 +32,12 @@ const adminLogin = async (req, res) => {
       });
     }
 
+    if (admin.role !== "admin") {
+      return res.status(403).json({
+        message: "Use the executive reports login for this account",
+      });
+    }
+
     const token = generateToken(
       admin._id,
       admin.role
@@ -42,6 +49,57 @@ const adminLogin = async (req, res) => {
         id: admin._id,
         username: admin.username,
         role: admin.role,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: error.message,
+    });
+  }
+};
+
+const executiveLogin = async (req, res) => {
+  try {
+    const { username, password } = req.body;
+
+    const executive = await ExecutiveAccount.findOne({
+      username: username?.trim().toLowerCase(),
+    });
+
+    if (!executive) {
+      return res.status(401).json({
+        message: "Invalid credentials",
+      });
+    }
+
+    if (executive.status === "inactive") {
+      return res.status(403).json({
+        message: "This executive account has been deactivated",
+      });
+    }
+
+    const isMatch = await bcrypt.compare(
+      password,
+      executive.password
+    );
+
+    if (!isMatch) {
+      return res.status(401).json({
+        message: "Invalid credentials",
+      });
+    }
+
+    const token = generateToken(
+      executive._id,
+      executive.role
+    );
+
+    return res.status(200).json({
+      token,
+      executive: {
+        id: executive._id,
+        username: executive.username,
+        role: executive.role,
       },
     });
   } catch (error) {
@@ -259,6 +317,7 @@ const changeTeacherPassword = async (req, res) => {
 
 module.exports = {
   adminLogin,
+  executiveLogin,
   studentLogin,
   teacherLogin,
   changeStudentPassword,

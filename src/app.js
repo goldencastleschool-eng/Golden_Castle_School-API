@@ -14,6 +14,7 @@ const classResultRoutes = require("./routes/classResultRoutes");
 const feeRoutes = require("./routes/feeRoutes");
 const feeStructureRoutes = require("./routes/feeStructureRoutes");
 const portalVisibilityRoutes = require("./routes/portalVisibilityRoutes");
+const reportRoutes = require("./routes/reportRoutes");
 
 const securityHeaders = (req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
@@ -55,6 +56,7 @@ app.use('/api/class-results', classResultRoutes);
 app.use('/api/fees', feeRoutes);
 app.use('/api/fee-structures', feeStructureRoutes);
 app.use('/api/portal-visibility', portalVisibilityRoutes);
+app.use('/api/reports', reportRoutes);
 
 
 module.exports = app;
