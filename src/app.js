@@ -15,6 +15,8 @@ const feeRoutes = require("./routes/feeRoutes");
 const feeStructureRoutes = require("./routes/feeStructureRoutes");
 const portalVisibilityRoutes = require("./routes/portalVisibilityRoutes");
 const reportRoutes = require("./routes/reportRoutes");
+const busManagementRoutes = require("./routes/busManagementRoutes");
+const payrollRoutes = require("./routes/payrollRoutes");
 
 const securityHeaders = (req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
@@ -57,6 +59,8 @@ app.use('/api/fees', feeRoutes);
 app.use('/api/fee-structures', feeStructureRoutes);
 app.use('/api/portal-visibility', portalVisibilityRoutes);
 app.use('/api/reports', reportRoutes);
+app.use('/api/bus-management', busManagementRoutes);
+app.use('/api/payroll', payrollRoutes);
 
 
 module.exports = app;
