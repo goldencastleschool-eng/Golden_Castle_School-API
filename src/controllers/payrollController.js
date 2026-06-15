@@ -4,6 +4,10 @@ const PayrollStructure = require("../models/payrollStructureModel");
 const PayrollAssignment = require("../models/payrollAssignmentModel");
 const PayrollPayment = require("../models/payrollPaymentModel");
 const Teacher = require("../models/teacherModel");
+const {
+  applyListQueryOptions,
+  getListQueryOptions
+} = require("../utils/listQueryOptions");
 
 const validCategories = ["academic", "non_academic"];
 const validPeriodTypes = ["monthly", "termly"];
@@ -140,10 +144,14 @@ const getLevels = async (req, res) => {
       query.status = req.query.status;
     }
 
-    const levels = await StaffLevel.find(query).sort({
+    const levelsQuery = StaffLevel.find(query).sort({
       category: 1,
       name: 1
     });
+    const levels = await applyListQueryOptions(
+      levelsQuery,
+      getListQueryOptions(req.query)
+    );
 
     res.json(levels);
   } catch (error) {
@@ -312,9 +320,13 @@ const getStaff = async (req, res) => {
       ];
     }
 
-    const staff = await PayrollStaff.find(query)
+    const staffQuery = PayrollStaff.find(query)
       .populate(populateStaff)
       .sort({ createdAt: -1 });
+    const staff = await applyListQueryOptions(
+      staffQuery,
+      getListQueryOptions(req.query)
+    );
 
     res.json(staff);
   } catch (error) {
@@ -467,7 +479,7 @@ const deleteStaff = async (req, res) => {
 
 const getStructures = async (req, res) => {
   try {
-    const structures = await PayrollStructure.find(buildPayrollQuery(req.query))
+    const structuresQuery = PayrollStructure.find(buildPayrollQuery(req.query))
       .populate(populateStructure)
       .sort({
         session: -1,
@@ -475,6 +487,10 @@ const getStructures = async (req, res) => {
         period: 1,
         createdAt: -1
       });
+    const structures = await applyListQueryOptions(
+      structuresQuery,
+      getListQueryOptions(req.query)
+    );
 
     res.json(structures);
   } catch (error) {
@@ -665,11 +681,19 @@ const deleteStructure = async (req, res) => {
 
 const getAssignments = async (req, res) => {
   try {
-    const assignments = await PayrollAssignment.find(buildPayrollQuery(req.query))
+    const assignmentQuery = buildPayrollQuery(req.query);
+    const assignmentsQuery = PayrollAssignment.find(assignmentQuery)
       .populate(populateAssignment)
       .sort({
         createdAt: -1
       });
+    const listOptions = getListQueryOptions(req.query);
+    const [assignments, totalCount] = await Promise.all([
+      applyListQueryOptions(assignmentsQuery, listOptions),
+      PayrollAssignment.countDocuments(assignmentQuery)
+    ]);
+
+    res.set("X-Total-Count", totalCount.toString());
 
     res.json(assignments);
   } catch (error) {
@@ -867,12 +891,20 @@ const deleteAssignment = async (req, res) => {
 
 const getPayments = async (req, res) => {
   try {
-    const payments = await PayrollPayment.find(buildPayrollQuery(req.query))
+    const paymentQuery = buildPayrollQuery(req.query);
+    const paymentsQuery = PayrollPayment.find(paymentQuery)
       .populate(populatePayment)
       .sort({
         payment_date: -1,
         createdAt: -1
       });
+    const listOptions = getListQueryOptions(req.query);
+    const [payments, totalCount] = await Promise.all([
+      applyListQueryOptions(paymentsQuery, listOptions),
+      PayrollPayment.countDocuments(paymentQuery)
+    ]);
+
+    res.set("X-Total-Count", totalCount.toString());
 
     res.json(payments);
   } catch (error) {

@@ -33,7 +33,8 @@ app.use(cors({
       "http://127.0.0.1:5173",
       "https://golden-castle-school.vercel.app",
     ],
-  credentials: true
+  credentials: true,
+  exposedHeaders: ["X-Total-Count"]
 }));
 app.use(express.json({
   limit: "1mb"

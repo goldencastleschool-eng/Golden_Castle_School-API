@@ -5,6 +5,10 @@ const BusEnrollment = require("../models/busEnrollmentModel");
 const BusPayment = require("../models/busPaymentModel");
 const Class = require("../models/classModel");
 const Student = require("../models/studentModel");
+const {
+  applyListQueryOptions,
+  getListQueryOptions
+} = require("../utils/listQueryOptions");
 
 const populateRoute = {
   path: "route",
@@ -135,7 +139,11 @@ const getBusEnrollmentQuery = (reqQuery = {}) => {
 
 const getBuses = async (req, res) => {
   try {
-    const buses = await Bus.find().sort({ createdAt: -1 });
+    const busesQuery = Bus.find().sort({ createdAt: -1 });
+    const buses = await applyListQueryOptions(
+      busesQuery,
+      getListQueryOptions(req.query)
+    );
 
     res.json(buses);
   } catch (error) {
@@ -266,9 +274,13 @@ const deleteBus = async (req, res) => {
 
 const getRoutes = async (req, res) => {
   try {
-    const routes = await BusRoute.find()
+    const routesQuery = BusRoute.find()
       .populate("bus", "name plate_number driver_name driver_phone capacity status")
       .sort({ createdAt: -1 });
+    const routes = await applyListQueryOptions(
+      routesQuery,
+      getListQueryOptions(req.query)
+    );
 
     res.json(routes);
   } catch (error) {
@@ -406,9 +418,13 @@ const getFeeStructures = async (req, res) => {
       query.term = req.query.term;
     }
 
-    const structures = await BusFeeStructure.find(query)
+    const structuresQuery = BusFeeStructure.find(query)
       .populate(populateRoute)
       .sort({ session: -1, term: 1, createdAt: -1 });
+    const structures = await applyListQueryOptions(
+      structuresQuery,
+      getListQueryOptions(req.query)
+    );
 
     res.json(structures);
   } catch (error) {
@@ -621,9 +637,17 @@ const deleteFeeStructure = async (req, res) => {
 
 const getEnrollments = async (req, res) => {
   try {
-    const enrollments = await BusEnrollment.find(getBusEnrollmentQuery(req.query))
+    const enrollmentQuery = getBusEnrollmentQuery(req.query);
+    const enrollmentsQuery = BusEnrollment.find(enrollmentQuery)
       .populate(populateEnrollment)
       .sort({ createdAt: -1 });
+    const listOptions = getListQueryOptions(req.query);
+    const [enrollments, totalCount] = await Promise.all([
+      applyListQueryOptions(enrollmentsQuery, listOptions),
+      BusEnrollment.countDocuments(enrollmentQuery)
+    ]);
+
+    res.set("X-Total-Count", totalCount.toString());
 
     res.json(enrollments);
   } catch (error) {
@@ -829,9 +853,17 @@ const deleteEnrollment = async (req, res) => {
 
 const getPayments = async (req, res) => {
   try {
-    const payments = await BusPayment.find(getBusPaymentQuery(req.query))
+    const paymentQuery = getBusPaymentQuery(req.query);
+    const paymentsQuery = BusPayment.find(paymentQuery)
       .populate(populatePayment)
       .sort({ payment_date: -1, createdAt: -1 });
+    const listOptions = getListQueryOptions(req.query);
+    const [payments, totalCount] = await Promise.all([
+      applyListQueryOptions(paymentsQuery, listOptions),
+      BusPayment.countDocuments(paymentQuery)
+    ]);
+
+    res.set("X-Total-Count", totalCount.toString());
 
     res.json(payments);
   } catch (error) {
