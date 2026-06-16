@@ -1,6 +1,8 @@
 const express = require('express');
 const cors = require('cors');
 const app = express();
+const { createCache } = require("./middleware/cacheMiddleware");
+const { createRateLimit } = require("./middleware/rateLimitMiddleware");
 
 const studentRoutes = require("./routes/studentRoutes");
 const classRoutes = require("./routes/classRoutes");
@@ -18,6 +20,21 @@ const reportRoutes = require("./routes/reportRoutes");
 const busManagementRoutes = require("./routes/busManagementRoutes");
 const payrollRoutes = require("./routes/payrollRoutes");
 
+const defaultClientOrigins = [
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+  "https://golden-castle-school.vercel.app"
+];
+
+const clientOrigins = (
+  process.env.CLIENT_URLS ||
+  process.env.CLIENT_URL ||
+  defaultClientOrigins.join(",")
+)
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
 const securityHeaders = (req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "SAMEORIGIN");
@@ -27,12 +44,15 @@ const securityHeaders = (req, res, next) => {
 };
 
 app.use(securityHeaders);
+app.set("trust proxy", 1);
 app.use(cors({
-  origin: [
-      "http://localhost:5173",
-      "http://127.0.0.1:5173",
-      "https://golden-castle-school.vercel.app",
-    ],
+  origin: (origin, callback) => {
+    if (!origin || clientOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    return callback(new Error("Not allowed by CORS"));
+  },
   credentials: true,
   exposedHeaders: ["X-Total-Count"]
 }));
@@ -40,9 +60,17 @@ app.use(express.json({
   limit: "1mb"
 }));
 
+app.use(
+  "/api",
+  createRateLimit({
+    max: Number(process.env.API_RATE_LIMIT_MAX || 300),
+    windowMs: Number(process.env.API_RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000),
+    prefix: "api"
+  })
+);
 
 
-app.get('/', (req, res) => {
+app.get('/', createCache({ ttlSeconds: 300, prefix: "health" }), (req, res) => {
     res.json({ message: 'Welcome to the School Result System API' } );
 });
 

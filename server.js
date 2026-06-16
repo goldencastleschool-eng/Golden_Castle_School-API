@@ -7,7 +7,7 @@ const { ensureFeeStructureIndexes } = require("./src/utils/feeStructureIndexes")
 
 
 
-const PORT = process.env.PORT;
+const PORT = process.env.PORT || 5000;
 const requiredEnv = [
   "MONGO_URI",
   "JWT_SECRET"
