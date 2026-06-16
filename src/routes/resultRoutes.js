@@ -5,6 +5,7 @@ const router = express.Router();
 const {
   uploadResult,
   getAllResults,
+  getResultCount,
   getStudentResults,
   updateResult,
   deleteResult,
@@ -29,6 +30,13 @@ router.get(
   protect,
   authorizeRoles("admin"),
   getAllResults
+);
+
+router.get(
+  "/count",
+  protect,
+  authorizeRoles("admin"),
+  getResultCount
 );
 
 

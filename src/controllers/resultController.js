@@ -25,13 +25,15 @@ const isPdfBuffer = (buffer) => {
   return Buffer.isBuffer(buffer) && buffer.subarray(0, 4).toString() === "%PDF";
 };
 
+const resultFileQuery = {
+  $or: [
+    { pdf_file_id: { $exists: true } },
+    { pdf_data: { $exists: true } }
+  ]
+};
+
 const buildResultQuery = () =>
-  Result.find({
-    $or: [
-      { pdf_file_id: { $exists: true } },
-      { pdf_data: { $exists: true } }
-    ]
-  }).select("-pdf_data");
+  Result.find(resultFileQuery).select("-pdf_data");
 
 const buildStudentResultQuery = (query) =>
   Result.find({
@@ -218,12 +220,34 @@ const getAllResults = async (req, res) => {
       .sort({
         createdAt: -1
       });
-    const results = await applyListQueryOptions(
-      query,
-      getListQueryOptions(req.query)
-    );
+    const listOptions = getListQueryOptions(req.query);
+    const [results, totalCount] = await Promise.all([
+      applyListQueryOptions(query, listOptions),
+      Result.countDocuments()
+    ]);
+
+    res.set("X-Total-Count", totalCount.toString());
 
     res.json(results);
+
+  } catch (error) {
+
+    res.status(500).json({
+      error: error.message
+    });
+  }
+};
+
+// GET RESULT COUNT
+const getResultCount = async (req, res) => {
+
+  try {
+
+    const totalCount = await Result.countDocuments();
+
+    res.json({
+      totalCount
+    });
 
   } catch (error) {
 
@@ -405,6 +429,7 @@ const downloadResult = (req, res) => sendResultPdf(req, res, "attachment");
 module.exports = {
   uploadResult,
   getAllResults,
+  getResultCount,
   getStudentResults,
   updateResult,
   deleteResult,
