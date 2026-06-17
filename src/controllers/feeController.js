@@ -25,6 +25,12 @@ const populateFee = [
 
 const validFeeTerms = ["First Term", "Second Term", "Third Term"];
 
+const getTermIndex = (term = "") => {
+  const termIndex = validFeeTerms.indexOf(term);
+
+  return termIndex === -1 ? validFeeTerms.length : termIndex;
+};
+
 const getStudentFeeEnrollment = (student, session, term) => {
   const enrollments = Array.isArray(student.fee_enrollments)
     ? student.fee_enrollments
@@ -35,6 +41,24 @@ const getStudentFeeEnrollment = (student, session, term) => {
       enrollment.session === session &&
       enrollment.term === term
   );
+};
+
+const getStudentEffectiveFeeEnrollment = (student, session, term) => {
+  const enrollments = Array.isArray(student.fee_enrollments)
+    ? student.fee_enrollments
+    : [];
+  const targetTermIndex = getTermIndex(term);
+
+  return enrollments
+    .filter(
+      (enrollment) =>
+        enrollment.session === session &&
+        getTermIndex(enrollment.term) <= targetTermIndex
+    )
+    .sort(
+      (firstEnrollment, secondEnrollment) =>
+        getTermIndex(secondEnrollment.term) - getTermIndex(firstEnrollment.term)
+    )[0];
 };
 
 const formatAmount = (amount) =>
@@ -56,7 +80,7 @@ const buildStudentFeeKey = ({ session, term, feeCategory }) =>
   [session, term, feeCategory].join("|");
 
 const getStudentFeeClassRecordId = (student, session, term) => {
-  const enrollment = getStudentFeeEnrollment(student, session, term);
+  const enrollment = getStudentEffectiveFeeEnrollment(student, session, term);
 
   return (
     enrollment?.class_record ||
@@ -66,7 +90,7 @@ const getStudentFeeClassRecordId = (student, session, term) => {
 };
 
 const getStudentFeeClassName = (student, session, term) => {
-  const enrollment = getStudentFeeEnrollment(student, session, term);
+  const enrollment = getStudentEffectiveFeeEnrollment(student, session, term);
 
   return (
     enrollment?.class ||
@@ -138,8 +162,13 @@ const buildFeeSnapshot = async (payload, excludedFeeId = "") => {
     };
   }
 
-  const enrollment = getStudentFeeEnrollment(selectedStudent, session, term);
-  const feeCategory = enrollment?.fee_category || "returning";
+  const enrollment = getStudentEffectiveFeeEnrollment(
+    selectedStudent,
+    session,
+    term
+  );
+  const exactEnrollment = getStudentFeeEnrollment(selectedStudent, session, term);
+  const feeCategory = exactEnrollment?.fee_category || "returning";
   const classRecordId =
     enrollment?.class_record ||
     selectedStudent.class_record?._id ||

@@ -8,6 +8,9 @@ const ResultAccess = require("../models/resultAccessModel");
 const Student = require("../models/studentModel");
 const Teacher = require("../models/teacherModel");
 const { normalizeClassName } = require("../utils/classRecords");
+const {
+  getStudentEffectiveTermEnrollment
+} = require("../utils/studentTermEnrollment");
 const { isFormTeacher } = require("../utils/teacherAssignments");
 
 const ACCESS_KEY = "active-result-access";
@@ -58,20 +61,50 @@ const studentBelongsToClassRecord = (student = {}, classRecord = {}) => {
   return student.current_session === classRecord.session && (sameClassRecord || sameLegacyClass);
 };
 
+const studentBelongsToEffectiveTermClassRecord = (
+  student = {},
+  classRecord = {},
+  session = "",
+  term = ""
+) => {
+  const enrollment = getStudentEffectiveTermEnrollment(student, session, term);
+
+  if (!enrollment || !classRecord) {
+    return false;
+  }
+
+  const enrollmentClassRecordId = getRecordId(enrollment.class_record);
+  const classRecordId = getRecordId(classRecord);
+  const sameClassRecord =
+    enrollmentClassRecordId &&
+    classRecordId &&
+    enrollmentClassRecordId === classRecordId;
+  const sameLegacyClass =
+    normalizeClassName(enrollment.class) === normalizeClassName(classRecord.name);
+
+  return sameClassRecord || sameLegacyClass;
+};
+
 const formatClassName = (classRecord = {}) =>
   classRecord.name ? classRecord.name.toString().toUpperCase() : "Class not set";
 
-const formatStudentClassName = (student = {}) =>
-  student.class ? student.class.toString().toUpperCase() : "Class not set";
+const formatStudentClassName = (student = {}, enrollment = null) => {
+  const className =
+    enrollment?.class ||
+    enrollment?.class_record?.name ||
+    student.class;
 
-const getStudentClassKey = (student = {}) => {
-  const classRecordId = getRecordId(student.class_record);
+  return className ? className.toString().toUpperCase() : "Class not set";
+};
+
+const getStudentClassKey = (student = {}, enrollment = null) => {
+  const classRecordId = getRecordId(enrollment?.class_record || student.class_record);
 
   if (classRecordId) {
     return classRecordId;
   }
 
-  return `${normalizeClassName(student.class)}:${student.current_session || ""}`;
+  return `${normalizeClassName(enrollment?.class || student.class)}:${enrollment?.session || student.current_session || ""}`;
 };
 
 const getStatusLabel = (status) => {
@@ -130,19 +163,24 @@ const buildStudentClassSummary = ({
   expectedLabel = "Students",
   visibleLabel = "Visible",
   missingLabel = "Missing",
+  session = "",
   term = "",
   detail = ""
 }) => {
   const classMap = new Map();
 
   students.forEach((student) => {
-    const classKey = getStudentClassKey(student);
+    const enrollment =
+      session && term
+        ? getStudentEffectiveTermEnrollment(student, session, term)
+        : null;
+    const classKey = getStudentClassKey(student, enrollment);
 
     if (!classMap.has(classKey)) {
       classMap.set(classKey, {
         id: classKey,
-        className: formatStudentClassName(student),
-        session: student.current_session || "",
+        className: formatStudentClassName(student, enrollment),
+        session: enrollment?.session || student.current_session || "",
         expectedCount: 0,
         visibleCount: 0
       });
@@ -333,7 +371,11 @@ const buildStudentResultsCheck = ({
   const issues = [];
   const configured = Boolean(access?.session && access?.term);
   const expectedStudents = configured
-    ? activeStudents.filter((student) => student.current_session === access.session)
+    ? activeStudents.filter((student) =>
+        Boolean(
+          getStudentEffectiveTermEnrollment(student, access.session, access.term)
+        )
+      )
     : [];
   const visibleResults = configured
     ? results.filter(
@@ -390,6 +432,7 @@ const buildStudentResultsCheck = ({
         expectedLabel: "Students",
         visibleLabel: "Results",
         missingLabel: "Missing",
+        session: access?.session || "",
         term: access?.term || ""
       })
     : buildStudentClassSummary({
@@ -533,6 +576,8 @@ const buildCumulativeResultsCheck = ({
 
 const buildFeeReceiptsCheck = ({
   fees,
+  accessSession = "",
+  accessTerm = "",
   addIssue,
   buildCheck
 }) => {
@@ -581,8 +626,8 @@ const buildFeeReceiptsCheck = ({
     description: "Recorded fee payments and printable receipts visible from the student portal.",
     status,
     access: {
-      session: "All sessions",
-      term: "All terms"
+      session: accessSession || "All sessions",
+      term: accessTerm || "All terms"
     },
     metrics: [
       buildMetric("Payment Records", fees.length),
@@ -613,15 +658,33 @@ const buildTeacherClassListCheck = ({
   activeStudents,
   classes,
   activeFormTeachers,
+  accessSession,
+  accessTerm,
   addIssue,
   buildCheck
 }) => {
   const issues = [];
-  const classStudentRows = classes
+  const configured = Boolean(accessSession && accessTerm);
+  const filteredClasses = accessSession
+    ? classes.filter((classRecord) => classRecord.session === accessSession)
+    : classes;
+  const filteredFormTeachers = accessSession
+    ? activeFormTeachers.filter((teacher) => teacher.session === accessSession)
+    : activeFormTeachers;
+  const classStudentRows = filteredClasses
     .map((classRecord) => {
-      const students = activeStudents.filter((student) =>
-        studentBelongsToClassRecord(student, classRecord)
-      );
+      const students = activeStudents.filter((student) => {
+        if (configured) {
+          return studentBelongsToEffectiveTermClassRecord(
+            student,
+            classRecord,
+            accessSession,
+            accessTerm
+          );
+        }
+
+        return studentBelongsToClassRecord(student, classRecord);
+      });
 
       return {
         classRecord,
@@ -633,29 +696,29 @@ const buildTeacherClassListCheck = ({
     classStudentRows.map((row) => getRecordId(row.classRecord))
   );
   const formTeacherClassIds = new Set(
-    activeFormTeachers
+    filteredFormTeachers
       .map((teacher) => getRecordId(teacher.assigned_class_record))
       .filter(Boolean)
   );
-  const teachersWithoutClass = activeFormTeachers.filter(
+  const teachersWithoutClass = filteredFormTeachers.filter(
     (teacher) => !getRecordId(teacher.assigned_class_record)
   );
   const classesWithoutTeacher = classStudentRows.filter(
     (row) => !formTeacherClassIds.has(getRecordId(row.classRecord))
   );
-  const teachersWithEmptyClass = activeFormTeachers.filter((teacher) => {
+  const teachersWithEmptyClass = filteredFormTeachers.filter((teacher) => {
     const classRecordId = getRecordId(teacher.assigned_class_record);
 
     return classRecordId && !classIdsWithStudents.has(classRecordId);
   });
-  const visibleClassLists = activeFormTeachers.filter((teacher) => {
+  const visibleClassLists = filteredFormTeachers.filter((teacher) => {
     const classRecordId = getRecordId(teacher.assigned_class_record);
 
     return classRecordId && classIdsWithStudents.has(classRecordId);
   });
   const teacherCountByClassId = new Map();
 
-  activeFormTeachers.forEach((teacher) => {
+  filteredFormTeachers.forEach((teacher) => {
     const classRecordId = getRecordId(teacher.assigned_class_record);
 
     if (!classRecordId) {
@@ -668,12 +731,14 @@ const buildTeacherClassListCheck = ({
     );
   });
 
-  if (activeFormTeachers.length === 0) {
+  if (filteredFormTeachers.length === 0) {
     addIssue({
       issues,
       feature: "Teacher class list",
       severity: "critical",
-      message: "No active form teacher is available for class-list access.",
+      message: accessSession
+        ? `No active form teacher is available for ${accessSession} class-list access.`
+        : "No active form teacher is available for class-list access.",
       action: "Register or reactivate form teachers and assign them to classes."
     });
   }
@@ -764,7 +829,8 @@ const buildTeacherClassListCheck = ({
     description: "Student class lists visible to active form teachers.",
     status,
     access: {
-      session: "Active assignments"
+      session: accessSession || "Active assignments",
+      term: accessTerm || ""
     },
     metrics: [
       buildMetric("Visible Class Lists", visibleClassLists.length),
@@ -1006,7 +1072,8 @@ const getAdminPortalVisibility = async (req, res) => {
     ] = await Promise.all([
       ResultAccess.findOne({ key: ACCESS_KEY }).lean(),
       Student.find(activeStudentStatusQuery)
-        .select("full_name admission_no class class_record current_session status")
+        .select("full_name admission_no class class_record current_session status fee_enrollments")
+        .populate("fee_enrollments.class_record")
         .lean(),
       Teacher.find()
         .select("-password -initial_password")
@@ -1026,7 +1093,30 @@ const getAdminPortalVisibility = async (req, res) => {
     const activeFormTeachers = teachers.filter(
       (teacher) => isActiveTeacher(teacher) && isFormTeacher(teacher)
     );
-    const accessRecord = access || {};
+    const auditSession = req.query.session?.toString().trim();
+    const auditTerm = req.query.term?.toString().trim();
+    const sourceAccessRecord = access || {};
+    const accessRecord = {
+      ...sourceAccessRecord,
+      session: auditSession || sourceAccessRecord.session,
+      term: auditTerm || sourceAccessRecord.term,
+      cumulative_session:
+        auditSession || sourceAccessRecord.cumulative_session,
+      broadsheet_session:
+        auditSession || sourceAccessRecord.broadsheet_session,
+      broadsheet_term:
+        auditTerm || sourceAccessRecord.broadsheet_term,
+      class_result_session:
+        auditSession || sourceAccessRecord.class_result_session,
+      class_result_term:
+        auditTerm || sourceAccessRecord.class_result_term
+    };
+    const filteredFees = fees.filter((fee) => {
+      const matchesSession = !auditSession || fee.session === auditSession;
+      const matchesTerm = !auditTerm || fee.term === auditTerm;
+
+      return matchesSession && matchesTerm;
+    });
     const checks = [
       buildStudentResultsCheck({
         access: accessRecord,
@@ -1043,7 +1133,9 @@ const getAdminPortalVisibility = async (req, res) => {
         buildCheck
       }),
       buildFeeReceiptsCheck({
-        fees,
+        fees: auditSession || auditTerm ? filteredFees : fees,
+        accessSession: auditSession,
+        accessTerm: auditTerm,
         addIssue,
         buildCheck
       }),
@@ -1051,6 +1143,8 @@ const getAdminPortalVisibility = async (req, res) => {
         activeStudents: students,
         classes,
         activeFormTeachers,
+        accessSession: accessRecord.session,
+        accessTerm: accessRecord.term,
         addIssue,
         buildCheck
       }),
@@ -1094,6 +1188,11 @@ const getAdminPortalVisibility = async (req, res) => {
 
     res.json({
       checked_at: new Date().toISOString(),
+      audit_filter: {
+        session: auditSession || "",
+        term: auditTerm || "",
+        using_live_access: !auditSession && !auditTerm
+      },
       access: {
         student_results: {
           session: accessRecord.session || "",

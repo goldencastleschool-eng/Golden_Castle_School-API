@@ -9,6 +9,9 @@ const {
   applyListQueryOptions,
   getListQueryOptions
 } = require("../utils/listQueryOptions");
+const {
+  studentBelongsToTermClass
+} = require("../utils/studentTermEnrollment");
 
 const populateRoute = {
   path: "route",
@@ -694,6 +697,7 @@ const createEnrollments = async (req, res) => {
       Class.findById(class_record),
       BusRoute.findById(route),
       Student.find({ _id: { $in: selectedStudentIds } })
+        .populate("fee_enrollments.class_record")
     ]);
 
     if (!classRecord) {
@@ -708,22 +712,19 @@ const createEnrollments = async (req, res) => {
       });
     }
 
-    const eligibleStudents = students.filter((student) => {
-      const studentClassRecordId = getRecordId(student.class_record).toString();
-
-      return (
-        isActiveStudent(student) &&
-        student.current_session === session &&
-        (
-          studentClassRecordId === classRecord._id.toString() ||
-          normalizeLowerText(student.class) === normalizeLowerText(classRecord.name)
-        )
-      );
-    });
+    const eligibleStudents = students.filter((student) =>
+      isActiveStudent(student) &&
+      studentBelongsToTermClass({
+        student,
+        classRecord,
+        session,
+        term
+      })
+    );
 
     if (eligibleStudents.length === 0) {
       return res.status(400).json({
-        message: "No selected active student belongs to this class/session"
+        message: "No selected active student belongs to this class for the selected session and term"
       });
     }
 

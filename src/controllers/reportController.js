@@ -1,6 +1,18 @@
 const Class = require("../models/classModel");
+const Bus = require("../models/busModel");
+const BusEnrollment = require("../models/busEnrollmentModel");
+const BusFeeStructure = require("../models/busFeeStructureModel");
+const BusPayment = require("../models/busPaymentModel");
+const BusRoute = require("../models/busRouteModel");
+const BoardingEnrollment = require("../models/boardingEnrollmentModel");
+const BoardingFeeStructure = require("../models/boardingFeeStructureModel");
+const BoardingHouse = require("../models/boardingHouseModel");
+const BoardingPayment = require("../models/boardingPaymentModel");
 const Fee = require("../models/feeModel");
 const FeeStructure = require("../models/feeStructureModel");
+const PayrollAssignment = require("../models/payrollAssignmentModel");
+const PayrollPayment = require("../models/payrollPaymentModel");
+const PayrollStaff = require("../models/payrollStaffModel");
 const Student = require("../models/studentModel");
 
 const validTerms = ["First Term", "Second Term", "Third Term"];
@@ -255,6 +267,241 @@ const buildClassSummaries = ({ classes, studentRows, selectedClassId }) => {
 const sumRows = (rows, field) =>
   rows.reduce((sum, row) => sum + Number(row[field] || 0), 0);
 
+const buildBusSummary = ({
+  buses = [],
+  routes = [],
+  structures = [],
+  enrollments = [],
+  payments = []
+}) => {
+  const routeById = new Map(
+    routes.map((route) => [
+      getRecordId(route._id),
+      route
+    ])
+  );
+  const structureByRouteId = new Map(
+    structures.map((structure) => [
+      getRecordId(structure.route),
+      Number(structure.amount || 0)
+    ])
+  );
+  const paidByEnrollmentId = payments.reduce((paymentMap, payment) => {
+    const enrollmentId = getRecordId(payment.enrollment);
+    paymentMap.set(
+      enrollmentId,
+      (paymentMap.get(enrollmentId) || 0) + Number(payment.amount || 0)
+    );
+
+    return paymentMap;
+  }, new Map());
+
+  const enrollmentRows = enrollments.map((enrollment) => {
+    const routeId = getRecordId(enrollment.route);
+    const expected = structureByRouteId.get(routeId) || 0;
+    const paid = paidByEnrollmentId.get(getRecordId(enrollment._id)) || 0;
+    const route = routeById.get(routeId);
+
+    return {
+      route_id: routeId,
+      route: route?.name || enrollment.route?.name || enrollment.class || "Route not set",
+      expected,
+      paid,
+      balance: Math.max(expected - paid, 0)
+    };
+  });
+  const routeRows = Array.from(
+    enrollmentRows.reduce((rowMap, enrollment) => {
+      const routeId = enrollment.route_id || "no-route";
+
+      if (!rowMap.has(routeId)) {
+        rowMap.set(routeId, {
+          route_id: routeId,
+          route: enrollment.route,
+          active_enrollments: 0,
+          expected: 0,
+          paid: 0,
+          balance: 0,
+          outstanding_students: 0
+        });
+      }
+
+      const row = rowMap.get(routeId);
+      row.active_enrollments += 1;
+      row.expected += enrollment.expected;
+      row.paid += enrollment.paid;
+      row.balance += enrollment.balance;
+      row.outstanding_students += enrollment.balance > 0 ? 1 : 0;
+
+      return rowMap;
+    }, new Map()).values()
+  ).sort((firstRow, secondRow) => firstRow.route.localeCompare(secondRow.route));
+
+  return {
+    registered_buses: buses.length,
+    active_buses: buses.filter((bus) => bus.status === "active").length,
+    routes: routes.length,
+    active_enrollments: enrollments.length,
+    expected: sumRows(enrollmentRows, "expected"),
+    paid: sumRows(enrollmentRows, "paid"),
+    balance: sumRows(enrollmentRows, "balance"),
+    outstanding_students: enrollmentRows.filter((row) => row.balance > 0).length,
+    payment_records: payments.length,
+    route_rows: routeRows
+  };
+};
+
+const buildPayrollSummary = ({
+  staff = [],
+  assignments = [],
+  payments = []
+}) => {
+  const paidByAssignmentId = payments.reduce((paymentMap, payment) => {
+    const assignmentId = getRecordId(payment.assignment);
+    paymentMap.set(
+      assignmentId,
+      (paymentMap.get(assignmentId) || 0) + Number(payment.amount || 0)
+    );
+
+    return paymentMap;
+  }, new Map());
+  const activeAssignments = assignments.filter(
+    (assignment) => assignment.status === "active"
+  );
+  const assignmentRows = activeAssignments.map((assignment) => {
+    const expected = Number(assignment.net_amount || 0);
+    const paid = paidByAssignmentId.get(getRecordId(assignment._id)) || 0;
+
+    return {
+      category: assignment.category || "not_set",
+      level_name: assignment.level_name || "Level not set",
+      expected,
+      paid,
+      balance: Math.max(expected - paid, 0)
+    };
+  });
+  const categoryRows = Array.from(
+    assignmentRows.reduce((rowMap, assignment) => {
+      const rowKey = `${assignment.category}|${assignment.level_name}`;
+
+      if (!rowMap.has(rowKey)) {
+        rowMap.set(rowKey, {
+          key: rowKey,
+          category: assignment.category,
+          level_name: assignment.level_name,
+          assigned_staff: 0,
+          expected: 0,
+          paid: 0,
+          balance: 0,
+          outstanding_staff: 0
+        });
+      }
+
+      const row = rowMap.get(rowKey);
+      row.assigned_staff += 1;
+      row.expected += assignment.expected;
+      row.paid += assignment.paid;
+      row.balance += assignment.balance;
+      row.outstanding_staff += assignment.balance > 0 ? 1 : 0;
+
+      return rowMap;
+    }, new Map()).values()
+  ).sort(
+    (firstRow, secondRow) =>
+      firstRow.category.localeCompare(secondRow.category) ||
+      firstRow.level_name.localeCompare(secondRow.level_name)
+  );
+
+  return {
+    active_staff: staff.filter((staffRecord) => staffRecord.status === "active").length,
+    assigned_staff: activeAssignments.length,
+    expected: sumRows(assignmentRows, "expected"),
+    paid: sumRows(assignmentRows, "paid"),
+    balance: sumRows(assignmentRows, "balance"),
+    outstanding_staff: assignmentRows.filter((row) => row.balance > 0).length,
+    payment_records: payments.length,
+    category_rows: categoryRows
+  };
+};
+
+const buildBoardingSummary = ({
+  houses = [],
+  structures = [],
+  enrollments = [],
+  payments = []
+}) => {
+  const houseById = new Map(
+    houses.map((house) => [getRecordId(house._id), house])
+  );
+  const structureByHouseId = new Map(
+    structures.map((structure) => [
+      getRecordId(structure.house),
+      Number(structure.amount || 0)
+    ])
+  );
+  const paidByEnrollmentId = payments.reduce((paymentMap, payment) => {
+    const enrollmentId = getRecordId(payment.enrollment);
+    paymentMap.set(
+      enrollmentId,
+      (paymentMap.get(enrollmentId) || 0) + Number(payment.amount || 0)
+    );
+
+    return paymentMap;
+  }, new Map());
+  const enrollmentRows = enrollments.map((enrollment) => {
+    const houseId = getRecordId(enrollment.house);
+    const expected = structureByHouseId.get(houseId) || 0;
+    const paid = paidByEnrollmentId.get(getRecordId(enrollment._id)) || 0;
+    const house = houseById.get(houseId);
+
+    return {
+      house_id: houseId,
+      house: house?.name || "House not set",
+      expected,
+      paid,
+      balance: Math.max(expected - paid, 0)
+    };
+  });
+  const houseRows = Array.from(
+    enrollmentRows.reduce((rowMap, enrollment) => {
+      const houseId = enrollment.house_id || "no-house";
+
+      if (!rowMap.has(houseId)) {
+        rowMap.set(houseId, {
+          house_id: houseId,
+          house: enrollment.house,
+          active_enrollments: 0,
+          expected: 0,
+          paid: 0,
+          balance: 0,
+          outstanding_students: 0
+        });
+      }
+
+      const row = rowMap.get(houseId);
+      row.active_enrollments += 1;
+      row.expected += enrollment.expected;
+      row.paid += enrollment.paid;
+      row.balance += enrollment.balance;
+      row.outstanding_students += enrollment.balance > 0 ? 1 : 0;
+
+      return rowMap;
+    }, new Map()).values()
+  ).sort((firstRow, secondRow) => firstRow.house.localeCompare(secondRow.house));
+
+  return {
+    houses: houses.length,
+    active_houses: houses.filter((house) => house.status === "active").length,
+    active_enrollments: enrollments.length,
+    expected: sumRows(enrollmentRows, "expected"),
+    paid: sumRows(enrollmentRows, "paid"),
+    balance: sumRows(enrollmentRows, "balance"),
+    outstanding_students: enrollmentRows.filter((row) => row.balance > 0).length,
+    payment_records: payments.length,
+    house_rows: houseRows
+  };
+};
+
 const getExecutiveReportOverview = async (req, res) => {
   try {
     const availableSessions = await getAvailableSessions();
@@ -289,11 +536,61 @@ const getExecutiveReportOverview = async (req, res) => {
         },
         class_summaries: [],
         newly_admitted_students: [],
-        returning_students: []
+        returning_students: [],
+        bus_summary: {
+          registered_buses: 0,
+          active_buses: 0,
+          routes: 0,
+          active_enrollments: 0,
+          expected: 0,
+          paid: 0,
+          balance: 0,
+          outstanding_students: 0,
+          payment_records: 0,
+          route_rows: []
+        },
+        payroll_summary: {
+          active_staff: 0,
+          assigned_staff: 0,
+          expected: 0,
+          paid: 0,
+          balance: 0,
+          outstanding_staff: 0,
+          payment_records: 0,
+          category_rows: []
+        },
+        boarding_summary: {
+          houses: 0,
+          active_houses: 0,
+          active_enrollments: 0,
+          expected: 0,
+          paid: 0,
+          balance: 0,
+          outstanding_students: 0,
+          payment_records: 0,
+          house_rows: []
+        }
       });
     }
 
-    const [classes, feeStructures, fees, students] = await Promise.all([
+    const [
+      classes,
+      feeStructures,
+      fees,
+      students,
+      buses,
+      busRoutes,
+      busStructures,
+      busEnrollments,
+      busPayments,
+      boardingHouses,
+      boardingStructures,
+      boardingEnrollments,
+      boardingPayments,
+      payrollStaff,
+      payrollAssignments,
+      payrollPayments
+    ] = await Promise.all([
       Class.find({ session }).sort({ name: 1 }).lean(),
       FeeStructure.find({ session, term }).lean(),
       Fee.find({ session, term }).select("student amount").lean(),
@@ -308,7 +605,19 @@ const getExecutiveReportOverview = async (req, res) => {
         )
         .populate("class_record", "name session")
         .populate("fee_enrollments.class_record", "name session")
-        .lean()
+        .lean(),
+      Bus.find().lean(),
+      BusRoute.find().lean(),
+      BusFeeStructure.find({ session, term }).lean(),
+      BusEnrollment.find({ session, term, status: "active" }).lean(),
+      BusPayment.find({ session, term }).select("enrollment amount").lean(),
+      BoardingHouse.find().lean(),
+      BoardingFeeStructure.find({ session, term }).lean(),
+      BoardingEnrollment.find({ session, term, status: "active" }).lean(),
+      BoardingPayment.find({ session, term }).select("enrollment amount").lean(),
+      PayrollStaff.find().select("status").lean(),
+      PayrollAssignment.find({ session, period: term }).lean(),
+      PayrollPayment.find({ session, period: term }).select("assignment amount").lean()
     ]);
 
     const classesById = new Map(
@@ -353,6 +662,24 @@ const getExecutiveReportOverview = async (req, res) => {
     const outstandingStudents = studentRows.filter(
       (student) => student.balance > 0
     ).length;
+    const busSummary = buildBusSummary({
+      buses,
+      routes: busRoutes,
+      structures: busStructures,
+      enrollments: busEnrollments,
+      payments: busPayments
+    });
+    const payrollSummary = buildPayrollSummary({
+      staff: payrollStaff,
+      assignments: payrollAssignments,
+      payments: payrollPayments
+    });
+    const boardingSummary = buildBoardingSummary({
+      houses: boardingHouses,
+      structures: boardingStructures,
+      enrollments: boardingEnrollments,
+      payments: boardingPayments
+    });
 
     res.set("Cache-Control", "no-store");
     res.json({
@@ -377,7 +704,21 @@ const getExecutiveReportOverview = async (req, res) => {
       },
       class_summaries: classSummaries,
       newly_admitted_students: newlyAdmittedStudents,
-      returning_students: returningStudents
+      returning_students: returningStudents,
+      bus_summary: busSummary,
+      payroll_summary: req.user?.role === "chairman"
+        ? {
+            active_staff: 0,
+            assigned_staff: 0,
+            expected: 0,
+            paid: 0,
+            balance: 0,
+            outstanding_staff: 0,
+            payment_records: 0,
+            category_rows: []
+          }
+        : payrollSummary,
+      boarding_summary: boardingSummary
     });
   } catch (error) {
     res.status(500).json({

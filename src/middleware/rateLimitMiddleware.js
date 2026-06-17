@@ -27,6 +27,8 @@ const createRateLimit = ({
       res.setHeader("RateLimit-Reset", ttlSeconds);
 
       if (count > max) {
+        res.setHeader("Retry-After", ttlSeconds);
+
         return res.status(429).json({
           message
         });

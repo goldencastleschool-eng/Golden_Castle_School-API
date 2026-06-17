@@ -3,6 +3,7 @@ const Result = require("../models/resultModel");
 const Student = require("../models/studentModel");
 
 const ResultAccess = require("../models/resultAccessModel");
+const Class = require("../models/classModel");
 const {
   deletePdfFile,
   sendPdfFile,
@@ -12,6 +13,9 @@ const {
   applyListQueryOptions,
   getListQueryOptions
 } = require("../utils/listQueryOptions");
+const {
+  studentBelongsToTermClass
+} = require("../utils/studentTermEnrollment");
 
 const createSafeFileName = (...parts) => {
   return `${parts.filter(Boolean).join("-")}-result.pdf`
@@ -136,6 +140,7 @@ const uploadResult = async (req, res) => {
       studentId,
       session,
       term,
+      class_record,
       class: studentClass
     } = req.body;
 
@@ -151,13 +156,38 @@ const uploadResult = async (req, res) => {
       });
     }
 
-    const student = await Student.findById(studentId);
+    const [student, selectedClass] = await Promise.all([
+      Student.findById(studentId).populate("fee_enrollments.class_record"),
+      class_record ? Class.findById(class_record) : null
+    ]);
 
     if (!student) {
       return res.status(404).json({
         message: "Student not found"
       });
     }
+
+    if (!selectedClass) {
+      return res.status(400).json({
+        message: "Class record is required"
+      });
+    }
+
+    if (
+      !studentBelongsToTermClass({
+        student,
+        classRecord: selectedClass,
+        session,
+        term
+      })
+    ) {
+      return res.status(400).json({
+        message:
+          "Student is not enrolled in this class for the selected session and term"
+      });
+    }
+
+    const resultClass = studentClass || selectedClass.name;
 
     const fileName = createSafeFileName(
       student.full_name,
@@ -173,7 +203,8 @@ const uploadResult = async (req, res) => {
         student: studentId,
         session,
         term,
-        class: studentClass
+        class: resultClass,
+        class_record
       }
     });
 
@@ -184,7 +215,7 @@ const uploadResult = async (req, res) => {
         student: studentId,
         session,
         term,
-        class: studentClass,
+        class: resultClass,
         pdf_file_id: pdfFileId,
         pdf_mime_type: req.file.mimetype,
         file_name: fileName
@@ -322,11 +353,15 @@ const updateResult = async (req, res) => {
       studentId,
       session,
       term,
-      class: studentClass
+      class: studentClass,
+      class_record
     } = req.body;
 
     const targetStudentId = studentId || result.student;
-    const student = await Student.findById(targetStudentId);
+    const [student, selectedClass] = await Promise.all([
+      Student.findById(targetStudentId).populate("fee_enrollments.class_record"),
+      class_record ? Class.findById(class_record) : null
+    ]);
 
     if (!student) {
       return res.status(404).json({
@@ -336,7 +371,28 @@ const updateResult = async (req, res) => {
 
     const nextSession = session || result.session;
     const nextTerm = term || result.term;
-    const nextClass = studentClass || result.class;
+    const nextClass = studentClass || selectedClass?.name || result.class;
+
+    if (class_record && !selectedClass) {
+      return res.status(400).json({
+        message: "Class record is required"
+      });
+    }
+
+    if (
+      selectedClass &&
+      !studentBelongsToTermClass({
+        student,
+        classRecord: selectedClass,
+        session: nextSession,
+        term: nextTerm
+      })
+    ) {
+      return res.status(400).json({
+        message:
+          "Student is not enrolled in this class for the selected session and term"
+      });
+    }
     const fileName = createSafeFileName(
       student.full_name,
       nextTerm,

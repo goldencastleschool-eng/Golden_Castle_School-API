@@ -18,6 +18,7 @@ const feeStructureRoutes = require("./routes/feeStructureRoutes");
 const portalVisibilityRoutes = require("./routes/portalVisibilityRoutes");
 const reportRoutes = require("./routes/reportRoutes");
 const busManagementRoutes = require("./routes/busManagementRoutes");
+const boardingManagementRoutes = require("./routes/boardingManagementRoutes");
 const payrollRoutes = require("./routes/payrollRoutes");
 
 const defaultClientOrigins = [
@@ -63,7 +64,7 @@ app.use(express.json({
 app.use(
   "/api",
   createRateLimit({
-    max: Number(process.env.API_RATE_LIMIT_MAX || 300),
+    max: Number(process.env.API_RATE_LIMIT_MAX || 1000),
     windowMs: Number(process.env.API_RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000),
     prefix: "api"
   })
@@ -89,6 +90,7 @@ app.use('/api/fee-structures', feeStructureRoutes);
 app.use('/api/portal-visibility', portalVisibilityRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/bus-management', busManagementRoutes);
+app.use('/api/boarding-management', boardingManagementRoutes);
 app.use('/api/payroll', payrollRoutes);
 
 
