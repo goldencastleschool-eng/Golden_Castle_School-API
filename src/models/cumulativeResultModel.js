@@ -19,7 +19,36 @@ const cumulativeResultSchema = new mongoose.Schema(
     },
 
     pdf_file_id: {
-      type: mongoose.Schema.Types.ObjectId
+      type: mongoose.Schema.Types.Mixed
+    },
+
+    pdf_storage: {
+      type: String,
+      default: "gridfs"
+    },
+
+    pdf_file_key: {
+      type: String
+    },
+
+    pdf_bucket: {
+      type: String
+    },
+
+    pdf_size: {
+      type: Number
+    },
+
+    pdf_uploaded_at: {
+      type: Date
+    },
+
+    pdf_migrated_at: {
+      type: Date
+    },
+
+    legacy_pdf_file_id: {
+      type: mongoose.Schema.Types.Mixed
     },
 
     pdf_data: {

@@ -5,6 +5,7 @@ const Teacher = require("../models/teacherModel");
 const { isFormTeacher } = require("../utils/teacherAssignments");
 const {
   deletePdfFile,
+  getPdfStorageFields,
   sendPdfFile,
   uploadPdfBuffer
 } = require("../utils/pdfStorage");
@@ -111,7 +112,7 @@ const uploadClassResult = async (req, res) => {
       assigned_teacher: selectedTeacher._id
     });
 
-    const pdfFileId = await uploadPdfBuffer(req.file.buffer, {
+    const pdfUpload = await uploadPdfBuffer(req.file.buffer, {
       fileName,
       contentType: req.file.mimetype,
       metadata: {
@@ -141,12 +142,14 @@ const uploadClassResult = async (req, res) => {
             class: selectedClass.name,
             class_record: selectedClass._id,
             assigned_teacher: selectedTeacher._id,
-            pdf_file_id: pdfFileId,
-            pdf_mime_type: req.file.mimetype,
-            file_name: fileName
+            ...getPdfStorageFields(pdfUpload, {
+              contentType: req.file.mimetype,
+              fileName
+            })
           },
           $unset: {
-            pdf_data: ""
+            pdf_data: "",
+            legacy_pdf_file_id: ""
           }
         },
         {
@@ -156,11 +159,11 @@ const uploadClassResult = async (req, res) => {
         }
       ).select("-pdf_data");
     } catch (error) {
-      await deletePdfFile(pdfFileId);
+      await deletePdfFile(pdfUpload);
       throw error;
     }
 
-    await deletePdfFile(existingClassResult?.pdf_file_id);
+    await deletePdfFile(existingClassResult);
 
     res.status(201).json(classResult);
   } catch (error) {
@@ -176,10 +179,8 @@ const deleteClassResult = async (req, res) => {
       return res.status(404).json({ message: "Class result not found" });
     }
 
-    const pdfFileId = classResult.pdf_file_id;
-
     await classResult.deleteOne();
-    await deletePdfFile(pdfFileId);
+    await deletePdfFile(classResult);
 
     res.json({ message: "Class result deleted successfully" });
   } catch (error) {
@@ -291,7 +292,10 @@ const sendClassResultPdf = async (req, res, dispositionType) => {
 
     return sendPdfFile({
       res,
+      storage: classResult.pdf_storage,
       fileId: classResult.pdf_file_id,
+      fileKey: classResult.pdf_file_key,
+      bucket: classResult.pdf_bucket,
       fallbackBuffer: classResult.pdf_data,
       fileName: classResult.file_name,
       contentType: classResult.pdf_mime_type,

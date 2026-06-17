@@ -6,6 +6,7 @@ const mongoose = require("mongoose");
 const Result = require("../models/resultModel");
 const {
   deletePdfFile,
+  getPdfStorageFields,
   uploadPdfBuffer
 } = require("../utils/pdfStorage");
 
@@ -55,7 +56,7 @@ const migrateResults = async () => {
       result.file_name ||
       createSafeFileName(result.term, result.session, result._id.toString());
 
-    const pdfFileId = await uploadPdfBuffer(pdfBuffer, {
+    const pdfUpload = await uploadPdfBuffer(pdfBuffer, {
       fileName,
       contentType: "application/pdf",
       metadata: {
@@ -72,9 +73,10 @@ const migrateResults = async () => {
         { _id: result._id },
         {
           $set: {
-            pdf_file_id: pdfFileId,
-            pdf_mime_type: "application/pdf",
-            file_name: fileName
+            ...getPdfStorageFields(pdfUpload, {
+              contentType: "application/pdf",
+              fileName
+            })
           },
           $unset: {
             pdf_url: "",
@@ -84,7 +86,7 @@ const migrateResults = async () => {
         }
       );
     } catch (error) {
-      await deletePdfFile(pdfFileId);
+      await deletePdfFile(pdfUpload);
       throw error;
     }
 

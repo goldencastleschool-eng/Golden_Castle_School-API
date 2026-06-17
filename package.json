@@ -11,6 +11,7 @@
     "indexes:search:sync": "node src/scripts/manageSearchIndexes.js --sync",
     "migrate:results": "node src/scripts/migrateCloudinaryResultsToDb.js",
     "migrate:pdf-gridfs": "node src/scripts/migratePdfDataToGridFS.js",
+    "migrate:pdf-b2": "node src/scripts/migratePdfFilesToBackblaze.js",
     "create:executive": "node src/scripts/createExecutiveAccount.js",
     "upstash:test": "node src/scripts/testUpstashConnection.js",
     "upstash:test:debug": "node -e \"require('dotenv').config(); const tls = require('tls'); const host = new URL(process.env.UPSTASH_REDIS_REST_URL).hostname; const socket = tls.connect({ host, port: 443, servername: host, rejectUnauthorized: false }, () => { const cert = socket.getPeerCertificate(true); console.log({ authorized: socket.authorized, authorizationError: socket.authorizationError, subject: cert.subject, issuer: cert.issuer, valid_from: cert.valid_from, valid_to: cert.valid_to }); socket.end(); }); socket.on('error', (error) => { console.error(error.message); process.exit(1); });\"",
@@ -21,6 +22,8 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1071.0",
+    "@aws-sdk/s3-request-presigner": "^3.1071.0",
     "@upstash/redis": "^1.38.0",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
@@ -28,7 +31,7 @@
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^8.24.0",
-    "multer": "^2.1.1",
+    "multer": "^2.2.0",
     "nodemon": "^3.1.14",
     "uuid": "^14.0.0"
   }

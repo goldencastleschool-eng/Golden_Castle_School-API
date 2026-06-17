@@ -1,10 +1,14 @@
 require("dotenv").config();
+process.env.PDF_STORAGE_DRIVER = "gridfs";
+
 const mongoose = require("mongoose");
 const Result = require("../models/resultModel");
 const CumulativeResult = require("../models/cumulativeResultModel");
 const ClassBroadsheet = require("../models/classBroadsheetModel");
+const ClassResult = require("../models/classResultModel");
 const {
   deletePdfFile,
+  getPdfStorageFields,
   uploadPdfBuffer
 } = require("../utils/pdfStorage");
 
@@ -27,7 +31,7 @@ const migrateModel = async ({ label, Model, metadataType }) => {
     }
 
     const fileName = record.file_name || `${record._id}.pdf`;
-    const pdfFileId = await uploadPdfBuffer(record.pdf_data, {
+    const pdfUpload = await uploadPdfBuffer(record.pdf_data, {
       fileName,
       contentType: record.pdf_mime_type || "application/pdf",
       metadata: {
@@ -44,7 +48,10 @@ const migrateModel = async ({ label, Model, metadataType }) => {
         { _id: record._id },
         {
           $set: {
-            pdf_file_id: pdfFileId
+            ...getPdfStorageFields(pdfUpload, {
+              contentType: record.pdf_mime_type || "application/pdf",
+              fileName
+            })
           },
           $unset: {
             pdf_data: ""
@@ -54,7 +61,7 @@ const migrateModel = async ({ label, Model, metadataType }) => {
 
       console.log(`Migrated ${label} ${record._id}`);
     } catch (error) {
-      await deletePdfFile(pdfFileId);
+      await deletePdfFile(pdfUpload);
       throw error;
     }
   }
@@ -83,6 +90,12 @@ const run = async () => {
     label: "class broadsheet",
     Model: ClassBroadsheet,
     metadataType: "class-broadsheet"
+  });
+
+  await migrateModel({
+    label: "class result",
+    Model: ClassResult,
+    metadataType: "class-result"
   });
 
   await mongoose.disconnect();

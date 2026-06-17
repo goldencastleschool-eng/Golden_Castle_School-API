@@ -6,6 +6,7 @@ const ResultAccess = require("../models/resultAccessModel");
 const Class = require("../models/classModel");
 const {
   deletePdfFile,
+  getPdfStorageFields,
   sendPdfFile,
   uploadPdfBuffer
 } = require("../utils/pdfStorage");
@@ -115,7 +116,10 @@ const sendResultPdf = async (req, res, dispositionType) => {
 
     return sendPdfFile({
       res,
+      storage: result.pdf_storage,
       fileId: result.pdf_file_id,
+      fileKey: result.pdf_file_key,
+      bucket: result.pdf_bucket,
       fallbackBuffer: result.pdf_data,
       fileName,
       contentType: result.pdf_mime_type,
@@ -195,7 +199,7 @@ const uploadResult = async (req, res) => {
       session
     );
 
-    const pdfFileId = await uploadPdfBuffer(req.file.buffer, {
+    const pdfUpload = await uploadPdfBuffer(req.file.buffer, {
       fileName,
       contentType: req.file.mimetype,
       metadata: {
@@ -216,12 +220,13 @@ const uploadResult = async (req, res) => {
         session,
         term,
         class: resultClass,
-        pdf_file_id: pdfFileId,
-        pdf_mime_type: req.file.mimetype,
-        file_name: fileName
+        ...getPdfStorageFields(pdfUpload, {
+          contentType: req.file.mimetype,
+          fileName
+        })
       });
     } catch (error) {
-      await deletePdfFile(pdfFileId);
+      await deletePdfFile(pdfUpload);
       throw error;
     }
 
@@ -405,7 +410,7 @@ const updateResult = async (req, res) => {
     result.class = nextClass;
     result.file_name = fileName;
 
-    let previousPdfFileId = null;
+    let previousPdfFile = null;
 
     if (req.file) {
       if (!isPdfBuffer(req.file.buffer)) {
@@ -414,8 +419,8 @@ const updateResult = async (req, res) => {
         });
       }
 
-      previousPdfFileId = result.pdf_file_id;
-      const pdfFileId = await uploadPdfBuffer(req.file.buffer, {
+      previousPdfFile = result.toObject();
+      const pdfUpload = await uploadPdfBuffer(req.file.buffer, {
         fileName,
         contentType: req.file.mimetype,
         metadata: {
@@ -427,13 +432,19 @@ const updateResult = async (req, res) => {
         }
       });
 
-      result.pdf_file_id = pdfFileId;
+      Object.assign(
+        result,
+        getPdfStorageFields(pdfUpload, {
+          contentType: req.file.mimetype,
+          fileName
+        })
+      );
       result.pdf_data = undefined;
-      result.pdf_mime_type = req.file.mimetype;
+      result.legacy_pdf_file_id = undefined;
     }
 
     const updatedResult = await result.save();
-    await deletePdfFile(previousPdfFileId);
+    await deletePdfFile(previousPdfFile);
 
     res.json({
       ...updatedResult.toObject(),
@@ -461,10 +472,8 @@ const deleteResult = async (req, res) => {
       });
     }
 
-    const pdfFileId = result.pdf_file_id;
-
     await result.deleteOne();
-    await deletePdfFile(pdfFileId);
+    await deletePdfFile(result);
 
     res.json({
       message: "Result deleted successfully"

@@ -5,6 +5,7 @@ const Teacher = require("../models/teacherModel");
 const { isFormTeacher } = require("../utils/teacherAssignments");
 const {
   deletePdfFile,
+  getPdfStorageFields,
   sendPdfFile,
   uploadPdfBuffer
 } = require("../utils/pdfStorage");
@@ -115,7 +116,7 @@ const uploadClassBroadsheet = async (req, res) => {
       }
     );
 
-    const pdfFileId = await uploadPdfBuffer(req.file.buffer, {
+    const pdfUpload = await uploadPdfBuffer(req.file.buffer, {
       fileName,
       contentType: req.file.mimetype,
       metadata: {
@@ -145,12 +146,14 @@ const uploadClassBroadsheet = async (req, res) => {
             class: selectedClass.name,
             class_record: selectedClass._id,
             assigned_teacher: selectedTeacher._id,
-            pdf_file_id: pdfFileId,
-            pdf_mime_type: req.file.mimetype,
-            file_name: fileName
+            ...getPdfStorageFields(pdfUpload, {
+              contentType: req.file.mimetype,
+              fileName
+            })
           },
           $unset: {
-            pdf_data: ""
+            pdf_data: "",
+            legacy_pdf_file_id: ""
           }
         },
         {
@@ -160,11 +163,11 @@ const uploadClassBroadsheet = async (req, res) => {
         }
       ).select("-pdf_data");
     } catch (error) {
-      await deletePdfFile(pdfFileId);
+      await deletePdfFile(pdfUpload);
       throw error;
     }
 
-    await deletePdfFile(existingBroadsheet?.pdf_file_id);
+    await deletePdfFile(existingBroadsheet);
 
     res.status(201).json(broadsheet);
 
@@ -181,10 +184,8 @@ const deleteClassBroadsheet = async (req, res) => {
       return res.status(404).json({ message: "Class broadsheet not found" });
     }
 
-    const pdfFileId = broadsheet.pdf_file_id;
-
     await broadsheet.deleteOne();
-    await deletePdfFile(pdfFileId);
+    await deletePdfFile(broadsheet);
 
     res.json({ message: "Class broadsheet deleted successfully" });
 
@@ -298,7 +299,10 @@ const sendClassBroadsheetPdf = async (req, res, dispositionType) => {
 
     return sendPdfFile({
       res,
+      storage: broadsheet.pdf_storage,
       fileId: broadsheet.pdf_file_id,
+      fileKey: broadsheet.pdf_file_key,
+      bucket: broadsheet.pdf_bucket,
       fallbackBuffer: broadsheet.pdf_data,
       fileName: broadsheet.file_name,
       contentType: broadsheet.pdf_mime_type,

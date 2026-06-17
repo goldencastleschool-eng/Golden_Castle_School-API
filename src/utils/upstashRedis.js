@@ -17,6 +17,12 @@ const getRedisConfig = () => {
     return null;
   }
 
+  if (!/^https?:\/\//i.test(url)) {
+    throw new Error(
+      "Upstash REST URL must start with https://. Use UPSTASH_REDIS_REST_URL, not the rediss:// database URL."
+    );
+  }
+
   return {
     url: url.replace(/\/$/, ""),
     token
@@ -94,9 +100,7 @@ const incrementWithTtl = async (key, ttlSeconds) => {
 
   if (client) {
     const count = Number(await client.incr(key));
-    await client.expire(key, ttlSeconds, {
-      nx: true
-    });
+    await client.expire(key, ttlSeconds);
     return count;
   }
 
