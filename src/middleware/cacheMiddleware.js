@@ -1,5 +1,6 @@
 const redisStore = require("../utils/upstashRedis");
 
+// Authenticated dashboard caches must use role/filter-aware keys to avoid sharing data across portals.
 const createCache = ({
   ttlSeconds = 60,
   prefix = "cache",
