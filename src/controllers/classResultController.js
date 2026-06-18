@@ -26,13 +26,16 @@ const isPdfBuffer = (buffer) => {
   return Buffer.isBuffer(buffer) && buffer.subarray(0, 4).toString() === "%PDF";
 };
 
+const pdfRecordQuery = {
+  $or: [
+    { pdf_file_id: { $exists: true, $nin: [null, ""] } },
+    { pdf_file_key: { $exists: true, $nin: [null, ""] } },
+    { pdf_data: { $exists: true, $nin: [null, ""] } }
+  ]
+};
+
 const classResultListQuery = () =>
-  ClassResult.find({
-    $or: [
-      { pdf_file_id: { $exists: true } },
-      { pdf_data: { $exists: true } }
-    ]
-  }).select("-pdf_data");
+  ClassResult.find(pdfRecordQuery).select("-pdf_data");
 
 const getClassResults = async (req, res) => {
   try {
@@ -213,10 +216,7 @@ const getApprovedTeacherClassResults = async (req, res) => {
       term: access.class_result_term,
       class_record: teacher.assigned_class_record,
       assigned_teacher: teacher._id,
-      $or: [
-        { pdf_file_id: { $exists: true } },
-        { pdf_data: { $exists: true } }
-      ]
+      ...pdfRecordQuery
     })
       .select("-pdf_data")
       .sort({ createdAt: -1 });
@@ -290,17 +290,24 @@ const sendClassResultPdf = async (req, res, dispositionType) => {
       return res.status(access.status).json({ message: access.message });
     }
 
+    const fileName = classResult.file_name || createSafeFileName(
+      classResult.class,
+      classResult.term,
+      classResult.session
+    );
+
     return sendPdfFile({
       res,
       storage: classResult.pdf_storage,
       fileId: classResult.pdf_file_id,
       fileKey: classResult.pdf_file_key,
+      legacyFileId: classResult.legacy_pdf_file_id,
       bucket: classResult.pdf_bucket,
       fallbackBuffer: classResult.pdf_data,
-      fileName: classResult.file_name,
+      fileName,
       contentType: classResult.pdf_mime_type,
       dispositionType,
-      unavailableMessage: "Class result PDF file is not available."
+      unavailableMessage: "Class result PDF file is not available. Please re-upload this class result."
     });
   } catch (error) {
     return res.status(500).json({ error: error.message });

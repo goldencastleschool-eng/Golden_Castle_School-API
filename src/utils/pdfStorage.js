@@ -331,6 +331,7 @@ const sendPdfFile = async ({
   storage,
   fileId,
   fileKey,
+  legacyFileId,
   bucket,
   fallbackBuffer,
   fileName,
@@ -338,6 +339,30 @@ const sendPdfFile = async ({
   dispositionType,
   unavailableMessage
 }) => {
+  const sendGridFsPdf = async (gridFsFileId) => {
+    const normalizedFileId = normalizeFileId(gridFsFileId);
+
+    if (!normalizedFileId) {
+      return false;
+    }
+
+    const gridFsBucket = getPdfBucket();
+    const [file] = await gridFsBucket.find({
+      _id: normalizedFileId
+    }).toArray();
+
+    if (!file) {
+      return false;
+    }
+
+    res.setHeader("Content-Type", file.contentType || contentType || "application/pdf");
+    res.setHeader("Content-Disposition", `${dispositionType}; filename="${fileName}"`);
+    res.setHeader("Content-Length", file.length);
+
+    gridFsBucket.openDownloadStream(normalizedFileId).pipe(res);
+    return true;
+  };
+
   if (isBackblazeReference({ storage, fileId, fileKey })) {
     const key = fileKey || fileId;
 
@@ -377,6 +402,10 @@ const sendPdfFile = async ({
 
         return Readable.from(objectResponse.Body).pipe(res);
       } catch (error) {
+        if (legacyFileId && await sendGridFsPdf(legacyFileId)) {
+          return;
+        }
+
         if (!fallbackBuffer?.length) {
           return res.status(404).json({
             message: unavailableMessage
@@ -386,25 +415,12 @@ const sendPdfFile = async ({
     }
   }
 
-  const normalizedFileId = normalizeFileId(fileId);
+  if (await sendGridFsPdf(fileId)) {
+    return;
+  }
 
-  if (normalizedFileId) {
-    const gridFsBucket = getPdfBucket();
-    const [file] = await gridFsBucket.find({
-      _id: normalizedFileId
-    }).toArray();
-
-    if (!file) {
-      return res.status(404).json({
-        message: unavailableMessage
-      });
-    }
-
-    res.setHeader("Content-Type", file.contentType || contentType || "application/pdf");
-    res.setHeader("Content-Disposition", `${dispositionType}; filename="${fileName}"`);
-    res.setHeader("Content-Length", file.length);
-
-    return gridFsBucket.openDownloadStream(normalizedFileId).pipe(res);
+  if (legacyFileId && await sendGridFsPdf(legacyFileId)) {
+    return;
   }
 
   if (fallbackBuffer?.length) {

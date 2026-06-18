@@ -119,6 +119,7 @@ const sendResultPdf = async (req, res, dispositionType) => {
       storage: result.pdf_storage,
       fileId: result.pdf_file_id,
       fileKey: result.pdf_file_key,
+      legacyFileId: result.legacy_pdf_file_id,
       bucket: result.pdf_bucket,
       fallbackBuffer: result.pdf_data,
       fileName,

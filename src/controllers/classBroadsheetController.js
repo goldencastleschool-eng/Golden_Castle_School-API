@@ -302,6 +302,7 @@ const sendClassBroadsheetPdf = async (req, res, dispositionType) => {
       storage: broadsheet.pdf_storage,
       fileId: broadsheet.pdf_file_id,
       fileKey: broadsheet.pdf_file_key,
+      legacyFileId: broadsheet.legacy_pdf_file_id,
       bucket: broadsheet.pdf_bucket,
       fallbackBuffer: broadsheet.pdf_data,
       fileName: broadsheet.file_name,
