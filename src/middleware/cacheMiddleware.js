@@ -3,9 +3,10 @@ const redisStore = require("../utils/upstashRedis");
 const createCache = ({
   ttlSeconds = 60,
   prefix = "cache",
+  cacheAuthorized = false,
   keyGenerator = (req) => `${req.method}:${req.originalUrl}`
 } = {}) => async (req, res, next) => {
-  if (req.method !== "GET" || req.headers.authorization) {
+  if (req.method !== "GET" || (!cacheAuthorized && req.headers.authorization)) {
     return next();
   }
 
@@ -45,6 +46,27 @@ const createCache = ({
   return next();
 };
 
+const invalidateCache = (prefixes = []) => async (req, res, next) => {
+  if (req.method === "GET") {
+    return next();
+  }
+
+  const originalJson = res.json.bind(res);
+
+  res.json = (body) => {
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      prefixes.forEach((prefix) => {
+        redisStore.deleteByPrefix(prefix).catch(() => {});
+      });
+    }
+
+    return originalJson(body);
+  };
+
+  return next();
+};
+
 module.exports = {
-  createCache
+  createCache,
+  invalidateCache
 };

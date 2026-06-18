@@ -72,6 +72,14 @@ const setMemoryValue = (key, value, ttlSeconds) => {
   });
 };
 
+const deleteMemoryByPrefix = (prefix) => {
+  for (const key of memoryStore.keys()) {
+    if (key.startsWith(prefix)) {
+      memoryStore.delete(key);
+    }
+  }
+};
+
 const get = async (key) => {
   const client = getClient();
 
@@ -110,9 +118,27 @@ const incrementWithTtl = async (key, ttlSeconds) => {
   return count;
 };
 
+const deleteByPrefix = async (prefix) => {
+  const client = getClient();
+
+  if (client) {
+    const keys = await client.keys(`${prefix}*`);
+
+    if (keys.length > 0) {
+      await client.del(...keys);
+    }
+
+    return keys.length;
+  }
+
+  deleteMemoryByPrefix(prefix);
+  return 0;
+};
+
 module.exports = {
   get,
   set,
+  deleteByPrefix,
   incrementWithTtl,
   isConfigured,
   getClient

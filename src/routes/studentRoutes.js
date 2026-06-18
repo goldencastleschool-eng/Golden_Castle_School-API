@@ -18,6 +18,9 @@ const {
 const protect = require("../middleware/authMiddleware");
 
 const authorizeRoles = require("../middleware/roleMiddleware");
+const { invalidateCache } = require("../middleware/cacheMiddleware");
+
+router.use(invalidateCache(["reports:overview:", "dashboard:portal-visibility:"]));
 
 
 // ONLY ADMIN CAN REGISTER STUDENTS

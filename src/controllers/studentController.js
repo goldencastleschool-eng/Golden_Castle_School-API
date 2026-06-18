@@ -124,9 +124,10 @@ const registerStudent = async (req, res) => {
       gender,
       password
     } = req.body;
+    const normalizedAdmissionNo = admission_no?.trim();
 
     const existingStudent = await Student.findOne({
-      admission_no
+      admission_no: normalizedAdmissionNo
     });
 
     if (existingStudent) {
@@ -161,7 +162,7 @@ const registerStudent = async (req, res) => {
 
     const student = new Student({
       full_name,
-      admission_no,
+      admission_no: normalizedAdmissionNo,
       class: selectedClass.name,
       class_record: selectedClass._id,
       current_session: selectedClass.session,
@@ -245,6 +246,7 @@ const updateStudent = async (req, res) => {
       gender,
       password
     } = req.body;
+    const normalizedAdmissionNo = admission_no?.trim();
 
     const student = await Student.findById(req.params.id);
 
@@ -255,11 +257,11 @@ const updateStudent = async (req, res) => {
     }
 
     if (
-      admission_no &&
-      admission_no !== student.admission_no
+      normalizedAdmissionNo &&
+      normalizedAdmissionNo !== student.admission_no
     ) {
       const existingStudent = await Student.findOne({
-        admission_no
+        admission_no: normalizedAdmissionNo
       });
 
       if (existingStudent) {
@@ -288,7 +290,7 @@ const updateStudent = async (req, res) => {
     }
 
     student.full_name = full_name || student.full_name;
-    student.admission_no = admission_no || student.admission_no;
+    student.admission_no = normalizedAdmissionNo || student.admission_no;
     student.class = selectedClass?.name || student.class;
     student.class_record = selectedClass?._id || student.class_record;
     student.current_session = selectedClass?.session || student.current_session;

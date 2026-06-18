@@ -20,10 +20,12 @@ const {
 } = require("../controllers/boardingManagementController");
 const protect = require("../middleware/authMiddleware");
 const authorizeRoles = require("../middleware/roleMiddleware");
+const { invalidateCache } = require("../middleware/cacheMiddleware");
 
 const router = express.Router();
 
 router.use(protect, authorizeRoles("admin"));
+router.use(invalidateCache(["reports:overview:", "dashboard:portal-visibility:"]));
 
 router.get("/houses", getHouses);
 router.post("/houses", createHouse);

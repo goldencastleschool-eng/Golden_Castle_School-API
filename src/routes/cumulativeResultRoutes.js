@@ -14,7 +14,10 @@ const {
 
 const protect = require("../middleware/authMiddleware");
 const authorizeRoles = require("../middleware/roleMiddleware");
+const { invalidateCache } = require("../middleware/cacheMiddleware");
 const upload = require("../middleware/uploadMiddleware");
+
+router.use(invalidateCache(["reports:overview:", "dashboard:portal-visibility:"]));
 
 router.get(
   "/",

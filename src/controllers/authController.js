@@ -6,6 +6,9 @@ const Teacher = require("../models/teacherModel");
 const generateToken = require("../utils/generateToken");
 const { getTeacherAssignmentType } = require("../utils/teacherAssignments");
 
+const escapeRegex = (value = "") =>
+  value.toString().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 // ======================
 // ADMIN LOGIN
 // ======================
@@ -115,9 +118,13 @@ const executiveLogin = async (req, res) => {
 const studentLogin = async (req, res) => {
   try {
     const { admission_no, password } = req.body;
+    const normalizedAdmissionNo = admission_no?.trim();
 
     const student = await Student.findOne({
-      admission_no,
+      admission_no: {
+        $regex: `^${escapeRegex(normalizedAdmissionNo)}$`,
+        $options: "i"
+      }
     });
 
     if (!student) {
