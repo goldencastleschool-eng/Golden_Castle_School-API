@@ -1,6 +1,7 @@
 const bcrypt = require("bcryptjs");
 
 const Student = require("../models/studentModel");
+const StudentTransition = require("../models/studentTransitionModel");
 
 const Result = require("../models/resultModel");
 
@@ -54,6 +55,78 @@ const validFeeCategories = ["new", "returning"];
 
 const normalizeFeeCategory = (feeCategory = "") =>
   feeCategory.toString().trim().toLowerCase();
+
+const parseSessionStartYear = (session = "") => {
+  const match = session.toString().match(/\d{4}/);
+
+  return match ? Number(match[0]) : 0;
+};
+
+const getClassRank = (className = "") => {
+  const compactClassName = className
+    .toString()
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
+  const numberMatch = compactClassName.match(/(\d+)/);
+  const classNumber = numberMatch ? Number(numberMatch[1]) : 0;
+
+  if (compactClassName.includes("pre")) {
+    return 0;
+  }
+
+  if (compactClassName.includes("nursery") || compactClassName.startsWith("kg")) {
+    return 10 + classNumber;
+  }
+
+  if (
+    compactClassName.includes("basic") ||
+    compactClassName.includes("primary") ||
+    compactClassName.startsWith("pry") ||
+    compactClassName.startsWith("grade")
+  ) {
+    return 20 + classNumber;
+  }
+
+  if (compactClassName.includes("jss") || compactClassName.startsWith("js")) {
+    return 40 + classNumber;
+  }
+
+  if (compactClassName.includes("sss") || compactClassName.startsWith("ss")) {
+    return 50 + classNumber;
+  }
+
+  return 0;
+};
+
+const getTransitionStatus = (sourceClass, targetClass) => {
+  const sourceRank = getClassRank(sourceClass?.name);
+  const targetRank = getClassRank(targetClass?.name);
+
+  if (sourceRank && targetRank && targetRank < sourceRank) {
+    return "demoted";
+  }
+
+  if (
+    sourceRank &&
+    targetRank &&
+    targetRank === sourceRank &&
+    parseSessionStartYear(targetClass?.session) <=
+      parseSessionStartYear(sourceClass?.session)
+  ) {
+    return "demoted";
+  }
+
+  return "promoted";
+};
+
+const createStudentTransitions = async (records = []) => {
+  if (records.length === 0) {
+    return;
+  }
+
+  await StudentTransition.insertMany(records, { ordered: false });
+};
 
 const upsertFeeEnrollment = (student, {
   session,
@@ -462,6 +535,25 @@ const deleteStudent = async (req, res) => {
   }
 };
 
+const getMyPromotionStatus = async (req, res) => {
+  try {
+    const transition = await StudentTransition.findOne({
+      student: req.user.id,
+      is_published: true
+    })
+      .sort({ decided_at: -1, createdAt: -1 })
+      .populate("from_class_record", "name session")
+      .populate("to_class_record", "name session")
+      .lean();
+
+    res.json(transition || null);
+  } catch (error) {
+    res.status(500).json({
+      error: error.message
+    });
+  }
+};
+
 const promoteStudentsByClass = async (req, res) => {
   try {
     const {
@@ -536,6 +628,7 @@ const promoteStudentsByClass = async (req, res) => {
 
     const promotionStudents = await Student.find(promotionQuery).select("_id");
     const promotionStudentIds = promotionStudents.map((student) => student._id);
+    const transitionStatus = getTransitionStatus(sourceClass, targetClass);
 
     const promotionResult = await Student.updateMany(
       {
@@ -588,6 +681,25 @@ const promoteStudentsByClass = async (req, res) => {
         }
       );
     }
+
+    await createStudentTransitions(
+      promotionStudentIds.map((studentId) => ({
+        student: studentId,
+        status: transitionStatus,
+        from_session: sourceClass.session,
+        from_class: sourceClass.name,
+        from_class_record: sourceClass._id,
+        to_session: targetClass.session,
+        to_class: targetClass.name,
+        to_class_record: targetClass._id,
+        remark:
+          transitionStatus === "demoted"
+            ? `You have been moved to ${targetClass.name.toUpperCase()} for ${targetClass.session}.`
+            : `You have been promoted to ${targetClass.name.toUpperCase()} for ${targetClass.session}.`,
+        is_published: true,
+        decided_at: new Date()
+      }))
+    );
 
     res.json({
       message: `${promotionResult.modifiedCount} student(s) moved to ${targetClass.name.toUpperCase()} for ${targetClass.session}.`,
@@ -669,6 +781,21 @@ const graduateStudents = async (req, res) => {
         graduation_session: graduationSession || sourceClass.session,
         graduation_class: sourceClass.name
       }
+    );
+
+    await createStudentTransitions(
+      eligibleStudentIds.map((studentId) => ({
+        student: studentId,
+        status: "graduated",
+        from_session: sourceClass.session,
+        from_class: sourceClass.name,
+        from_class_record: sourceClass._id,
+        to_session: graduationSession || sourceClass.session,
+        to_class: "Graduated",
+        remark: `You have graduated from ${sourceClass.name.toUpperCase()}.`,
+        is_published: true,
+        decided_at: new Date()
+      }))
     );
 
     res.json({
@@ -820,6 +947,7 @@ module.exports = {
   registerStudent,
   getAllStudents,
   getTeacherClassStudents,
+  getMyPromotionStatus,
   updateStudent,
   resetStudentPassword,
   deleteStudent,

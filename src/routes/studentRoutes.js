@@ -9,6 +9,7 @@ const {
   updateStudent,
   resetStudentPassword,
   deleteStudent,
+  getMyPromotionStatus,
   promoteStudentsByClass,
   graduateStudents,
   restoreGraduatedStudents,
@@ -35,6 +36,14 @@ router.get(
   protect,
   authorizeRoles("teacher"),
   getTeacherClassStudents
+);
+
+// ONLY STUDENTS CAN VIEW THEIR LATEST PROMOTION OR DEMOTION STATUS
+router.get(
+  "/me/promotion-status",
+  protect,
+  authorizeRoles("student"),
+  getMyPromotionStatus
 );
 
 // ONLY ADMIN CAN PROMOTE STUDENTS BY CLASS

@@ -1,7 +1,6 @@
 const Class = require("../models/classModel");
 const ClassBroadsheet = require("../models/classBroadsheetModel");
 const ClassResult = require("../models/classResultModel");
-const CumulativeResult = require("../models/cumulativeResultModel");
 const Fee = require("../models/feeModel");
 const Result = require("../models/resultModel");
 const ResultAccess = require("../models/resultAccessModel");
@@ -465,109 +464,6 @@ const buildStudentResultsCheck = ({
     samples: [
       {
         label: "Missing student results",
-        items: getMissingStudentSamples(missingStudents)
-      }
-    ].filter((sample) => sample.items.length > 0)
-  });
-};
-
-const buildCumulativeResultsCheck = ({
-  access,
-  activeStudents,
-  cumulativeResults,
-  addIssue,
-  buildCheck
-}) => {
-  const issues = [];
-  const configured = Boolean(access?.cumulative_session);
-  const expectedStudents = configured
-    ? activeStudents.filter(
-        (student) => student.current_session === access.cumulative_session
-      )
-    : [];
-  const visibleResults = configured
-    ? cumulativeResults.filter(
-        (result) => result.session === access.cumulative_session
-      )
-    : [];
-  const visibleStudentIds = new Set(
-    visibleResults.map((result) => getRecordId(result.student))
-  );
-  const missingStudents = expectedStudents.filter(
-    (student) => !visibleStudentIds.has(getRecordId(student))
-  );
-
-  if (!configured) {
-    addIssue({
-      issues,
-      feature: "Student cumulative results",
-      severity: "critical",
-      message: "Cumulative result access is not configured.",
-      action: "Open Result Upload and set the active cumulative result session."
-    });
-  } else if (expectedStudents.length === 0) {
-    addIssue({
-      issues,
-      feature: "Student cumulative results",
-      severity: "warning",
-      message: `No active student was found for ${access.cumulative_session}.`,
-      action: "Confirm the cumulative result session or student class sessions."
-    });
-  } else if (missingStudents.length > 0) {
-    addIssue({
-      issues,
-      feature: "Student cumulative results",
-      severity: "warning",
-      message: `${missingStudents.length} cumulative result(s) are missing for ${access.cumulative_session}.`,
-      action: "Upload the missing cumulative result PDFs before announcing availability.",
-      meta: {
-        missing_count: missingStudents.length
-      }
-    });
-  }
-
-  const status = !configured
-    ? "not_configured"
-    : issues.length > 0
-      ? "attention"
-      : "live";
-  const classSummary = configured
-    ? buildStudentClassSummary({
-        students: expectedStudents,
-        visibleStudentIds,
-        expectedLabel: "Students",
-        visibleLabel: "Cumulative",
-        missingLabel: "Missing"
-      })
-    : buildStudentClassSummary({
-        students: activeStudents,
-        visibleStudentIds: new Set(),
-        statusForAll: "not_configured",
-        expectedLabel: "Students",
-        visibleLabel: "Cumulative",
-        missingLabel: "Missing",
-        detail: "Set active cumulative result session"
-      });
-
-  return buildCheck({
-    key: "cumulative_results",
-    portal: "student",
-    label: "Cumulative Results",
-    description: "Session cumulative result PDFs visible from the student portal.",
-    status,
-    access: {
-      session: access?.cumulative_session || ""
-    },
-    metrics: [
-      buildMetric("Expected Students", expectedStudents.length),
-      buildMetric("Visible Results", visibleResults.length),
-      buildMetric("Missing Results", missingStudents.length)
-    ],
-    issues,
-    classSummary,
-    samples: [
-      {
-        label: "Missing cumulative results",
         items: getMissingStudentSamples(missingStudents)
       }
     ].filter((sample) => sample.items.length > 0)
@@ -1065,7 +961,6 @@ const getAdminPortalVisibility = async (req, res) => {
       teachers,
       classes,
       results,
-      cumulativeResults,
       fees,
       broadsheets,
       classResults
@@ -1081,7 +976,6 @@ const getAdminPortalVisibility = async (req, res) => {
         .lean(),
       Class.find().lean(),
       Result.find(pdfRecordQuery).select("-pdf_data").lean(),
-      CumulativeResult.find(pdfRecordQuery).select("-pdf_data").lean(),
       Fee.find()
         .select("-expected_items_at_payment")
         .populate("student", "full_name admission_no class current_session status")
@@ -1100,8 +994,6 @@ const getAdminPortalVisibility = async (req, res) => {
       ...sourceAccessRecord,
       session: auditSession || sourceAccessRecord.session,
       term: auditTerm || sourceAccessRecord.term,
-      cumulative_session:
-        auditSession || sourceAccessRecord.cumulative_session,
       broadsheet_session:
         auditSession || sourceAccessRecord.broadsheet_session,
       broadsheet_term:
@@ -1122,13 +1014,6 @@ const getAdminPortalVisibility = async (req, res) => {
         access: accessRecord,
         activeStudents: students,
         results,
-        addIssue,
-        buildCheck
-      }),
-      buildCumulativeResultsCheck({
-        access: accessRecord,
-        activeStudents: students,
-        cumulativeResults,
         addIssue,
         buildCheck
       }),
@@ -1197,9 +1082,6 @@ const getAdminPortalVisibility = async (req, res) => {
         student_results: {
           session: accessRecord.session || "",
           term: accessRecord.term || ""
-        },
-        cumulative_results: {
-          session: accessRecord.cumulative_session || ""
         },
         teacher_broadsheets: {
           session: accessRecord.broadsheet_session || "",
