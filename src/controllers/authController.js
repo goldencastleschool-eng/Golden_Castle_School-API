@@ -9,18 +9,31 @@ const { getTeacherAssignmentType } = require("../utils/teacherAssignments");
 const escapeRegex = (value = "") =>
   value.toString().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+const invalidLoginMessage =
+  "We could not sign you in. Please check your login details and try again.";
+
+const missingLoginMessage = (identifierLabel = "username") =>
+  `Enter your ${identifierLabel} and password to continue.`;
+
 // ======================
 // ADMIN LOGIN
 // ======================
 const adminLogin = async (req, res) => {
   try {
     const { username, password } = req.body;
+    const normalizedUsername = username?.trim().toLowerCase();
 
-    const admin = await Admin.findOne({ username });
+    if (!normalizedUsername || !password) {
+      return res.status(400).json({
+        message: missingLoginMessage("username"),
+      });
+    }
+
+    const admin = await Admin.findOne({ username: normalizedUsername });
 
     if (!admin) {
       return res.status(401).json({
-        message: "Invalid credentials",
+        message: invalidLoginMessage,
       });
     }
 
@@ -31,7 +44,7 @@ const adminLogin = async (req, res) => {
 
     if (!isMatch) {
       return res.status(401).json({
-        message: "Invalid credentials",
+        message: invalidLoginMessage,
       });
     }
 
@@ -64,14 +77,21 @@ const adminLogin = async (req, res) => {
 const executiveLogin = async (req, res) => {
   try {
     const { username, password } = req.body;
+    const normalizedUsername = username?.trim().toLowerCase();
+
+    if (!normalizedUsername || !password) {
+      return res.status(400).json({
+        message: missingLoginMessage("username"),
+      });
+    }
 
     const executive = await ExecutiveAccount.findOne({
-      username: username?.trim().toLowerCase(),
+      username: normalizedUsername,
     });
 
     if (!executive) {
       return res.status(401).json({
-        message: "Invalid credentials",
+        message: invalidLoginMessage,
       });
     }
 
@@ -88,7 +108,7 @@ const executiveLogin = async (req, res) => {
 
     if (!isMatch) {
       return res.status(401).json({
-        message: "Invalid credentials",
+        message: invalidLoginMessage,
       });
     }
 
@@ -120,6 +140,12 @@ const studentLogin = async (req, res) => {
     const { admission_no, password } = req.body;
     const normalizedAdmissionNo = admission_no?.trim();
 
+    if (!normalizedAdmissionNo || !password) {
+      return res.status(400).json({
+        message: missingLoginMessage("admission number"),
+      });
+    }
+
     const student = await Student.findOne({
       admission_no: {
         $regex: `^${escapeRegex(normalizedAdmissionNo)}$`,
@@ -129,7 +155,7 @@ const studentLogin = async (req, res) => {
 
     if (!student) {
       return res.status(401).json({
-        message: "Invalid credentials",
+        message: invalidLoginMessage,
       });
     }
 
@@ -140,7 +166,7 @@ const studentLogin = async (req, res) => {
 
     if (!isMatch) {
       return res.status(401).json({
-        message: "Invalid credentials",
+        message: invalidLoginMessage,
       });
     }
 
@@ -178,14 +204,21 @@ const logout = (req, res) => {
 const teacherLogin = async (req, res) => {
   try {
     const { username, password } = req.body;
+    const normalizedUsername = username?.trim().toLowerCase();
+
+    if (!normalizedUsername || !password) {
+      return res.status(400).json({
+        message: missingLoginMessage("username"),
+      });
+    }
 
     const teacher = await Teacher.findOne({
-      username: username?.trim().toLowerCase(),
+      username: normalizedUsername,
     });
 
     if (!teacher) {
       return res.status(401).json({
-        message: "Invalid credentials",
+        message: invalidLoginMessage,
       });
     }
 
@@ -199,7 +232,7 @@ const teacherLogin = async (req, res) => {
 
     if (!isMatch) {
       return res.status(401).json({
-        message: "Invalid credentials",
+        message: invalidLoginMessage,
       });
     }
 
