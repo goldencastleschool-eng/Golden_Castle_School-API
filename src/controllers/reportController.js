@@ -14,6 +14,10 @@ const PayrollAssignment = require("../models/payrollAssignmentModel");
 const PayrollPayment = require("../models/payrollPaymentModel");
 const PayrollStaff = require("../models/payrollStaffModel");
 const Student = require("../models/studentModel");
+const {
+  formatBusPaymentCategoryLabel,
+  normalizeBusPaymentCategory
+} = require("../utils/busPaymentCategories");
 
 const validTerms = ["First Term", "Second Term", "Third Term"];
 
@@ -23,6 +27,9 @@ const normalizeClassName = (className = "") =>
   normalizeValue(className).toLowerCase().replace(/\s+/g, "");
 
 const getRecordId = (record) => record?._id?.toString?.() || record?.toString?.() || "";
+
+const getBusStructureKey = (routeId, paymentCategory = "both") =>
+  `${routeId || "no-route"}|${normalizeBusPaymentCategory(paymentCategory)}`;
 
 const isActiveStudent = (student) =>
   !student.status || student.status === "active";
@@ -136,20 +143,23 @@ const buildStudentReportRows = ({
         return null;
       }
 
-      const paid = feesByStudentId.get(getRecordId(student._id)) || 0;
+      const paid =
+        feesByStudentId.get(`${getRecordId(student._id)}|${feeCategory}`) || 0;
       const structure = structuresByClassAndCategory.get(
         getStructureKey(classRecordId, feeCategory)
       );
-      const expected = Number(structure?.amount || 0);
+      const expected = feeCategory === "vip" ? 0 : Number(structure?.amount || 0);
       const balance = Math.max(expected - paid, 0);
       const paymentStatus =
-        expected <= 0 && paid <= 0
-          ? "No Structure"
-          : paid <= 0
-            ? "Unpaid"
-            : balance > 0
-              ? "Part Payment"
-              : "Fully Paid";
+        feeCategory === "vip"
+          ? "Exempt"
+          : expected <= 0 && paid <= 0
+            ? "No Structure"
+            : paid <= 0
+              ? "Unpaid"
+              : balance > 0
+                ? "Part Payment"
+                : "Fully Paid";
 
       return {
         _id: getRecordId(student._id),
@@ -198,6 +208,8 @@ const buildClassSummaries = ({ classes, studentRows, selectedClassId }) => {
       total_students: 0,
       newly_admitted: 0,
       returning: 0,
+      exempt: 0,
+      fee_category_counts: {},
       expected: 0,
       paid: 0,
       balance: 0,
@@ -220,6 +232,8 @@ const buildClassSummaries = ({ classes, studentRows, selectedClassId }) => {
         total_students: 0,
         newly_admitted: 0,
         returning: 0,
+        exempt: 0,
+        fee_category_counts: {},
         expected: 0,
         paid: 0,
         balance: 0,
@@ -234,17 +248,21 @@ const buildClassSummaries = ({ classes, studentRows, selectedClassId }) => {
     const summary = summariesByClass.get(key);
 
     summary.total_students += 1;
+    summary.fee_category_counts[student.fee_category] =
+      (summary.fee_category_counts[student.fee_category] || 0) + 1;
     summary.expected += student.expected;
     summary.paid += student.paid;
     summary.balance += student.balance;
 
     if (student.fee_category === "new") {
       summary.newly_admitted += 1;
-    } else {
+    } else if (student.fee_category === "returning") {
       summary.returning += 1;
     }
 
-    if (student.payment_status === "Fully Paid") {
+    if (student.payment_status === "Exempt") {
+      summary.exempt += 1;
+    } else if (student.payment_status === "Fully Paid") {
       summary.fully_paid += 1;
     } else if (student.payment_status === "Part Payment") {
       summary.part_payment += 1;
@@ -280,9 +298,12 @@ const buildBusSummary = ({
       route
     ])
   );
-  const structureByRouteId = new Map(
+  const structureByRouteAndCategory = new Map(
     structures.map((structure) => [
-      getRecordId(structure.route),
+      getBusStructureKey(
+        getRecordId(structure.route),
+        structure.payment_category || "both"
+      ),
       Number(structure.amount || 0)
     ])
   );
@@ -298,13 +319,21 @@ const buildBusSummary = ({
 
   const enrollmentRows = enrollments.map((enrollment) => {
     const routeId = getRecordId(enrollment.route);
-    const expected = structureByRouteId.get(routeId) || 0;
+    const paymentCategory = normalizeBusPaymentCategory(
+      enrollment.payment_category || "both"
+    );
+    const expected =
+      structureByRouteAndCategory.get(
+        getBusStructureKey(routeId, paymentCategory)
+      ) || 0;
     const paid = paidByEnrollmentId.get(getRecordId(enrollment._id)) || 0;
     const route = routeById.get(routeId);
 
     return {
       route_id: routeId,
       route: route?.name || enrollment.route?.name || enrollment.class || "Route not set",
+      payment_category: paymentCategory,
+      payment_category_label: formatBusPaymentCategoryLabel(paymentCategory),
       expected,
       paid,
       balance: Math.max(expected - paid, 0)
@@ -313,11 +342,14 @@ const buildBusSummary = ({
   const routeRows = Array.from(
     enrollmentRows.reduce((rowMap, enrollment) => {
       const routeId = enrollment.route_id || "no-route";
+      const rowKey = getBusStructureKey(routeId, enrollment.payment_category);
 
-      if (!rowMap.has(routeId)) {
-        rowMap.set(routeId, {
+      if (!rowMap.has(rowKey)) {
+        rowMap.set(rowKey, {
           route_id: routeId,
           route: enrollment.route,
+          payment_category: enrollment.payment_category,
+          payment_category_label: enrollment.payment_category_label,
           active_enrollments: 0,
           expected: 0,
           paid: 0,
@@ -326,7 +358,7 @@ const buildBusSummary = ({
         });
       }
 
-      const row = rowMap.get(routeId);
+      const row = rowMap.get(rowKey);
       row.active_enrollments += 1;
       row.expected += enrollment.expected;
       row.paid += enrollment.paid;
@@ -335,7 +367,11 @@ const buildBusSummary = ({
 
       return rowMap;
     }, new Map()).values()
-  ).sort((firstRow, secondRow) => firstRow.route.localeCompare(secondRow.route));
+  ).sort(
+    (firstRow, secondRow) =>
+      firstRow.route.localeCompare(secondRow.route) ||
+      firstRow.payment_category_label.localeCompare(secondRow.payment_category_label)
+  );
 
   return {
     registered_buses: buses.length,
@@ -529,6 +565,8 @@ const getExecutiveReportOverview = async (req, res) => {
           total_students: 0,
           newly_admitted: 0,
           returning: 0,
+          exempt: 0,
+          fee_category_counts: {},
           expected: 0,
           paid: 0,
           balance: 0,
@@ -593,7 +631,7 @@ const getExecutiveReportOverview = async (req, res) => {
     ] = await Promise.all([
       Class.find({ session }).sort({ name: 1 }).lean(),
       FeeStructure.find({ session, term }).lean(),
-      Fee.find({ session, term }).select("student amount").lean(),
+      Fee.find({ session, term }).select("student amount fee_category").lean(),
       Student.find({
         $or: [
           { current_session: session },
@@ -634,7 +672,10 @@ const getExecutiveReportOverview = async (req, res) => {
     );
     const feesByStudentId = fees.reduce((feeMap, fee) => {
       const studentId = getRecordId(fee.student);
-      feeMap.set(studentId, (feeMap.get(studentId) || 0) + Number(fee.amount || 0));
+      const feeCategory = fee.fee_category || "returning";
+      const feeKey = `${studentId}|${feeCategory}`;
+
+      feeMap.set(feeKey, (feeMap.get(feeKey) || 0) + Number(fee.amount || 0));
 
       return feeMap;
     }, new Map());
@@ -657,8 +698,14 @@ const getExecutiveReportOverview = async (req, res) => {
       (student) => student.fee_category === "new"
     );
     const returningStudents = studentRows.filter(
-      (student) => student.fee_category !== "new"
+      (student) => student.fee_category === "returning"
     );
+    const feeCategoryCounts = studentRows.reduce((categoryCounts, student) => {
+      categoryCounts[student.fee_category] =
+        (categoryCounts[student.fee_category] || 0) + 1;
+
+      return categoryCounts;
+    }, {});
     const outstandingStudents = studentRows.filter(
       (student) => student.balance > 0
     ).length;
@@ -697,6 +744,8 @@ const getExecutiveReportOverview = async (req, res) => {
         total_students: studentRows.length,
         newly_admitted: newlyAdmittedStudents.length,
         returning: returningStudents.length,
+        exempt: feeCategoryCounts.vip || 0,
+        fee_category_counts: feeCategoryCounts,
         expected: sumRows(studentRows, "expected"),
         paid: sumRows(studentRows, "paid"),
         balance: sumRows(studentRows, "balance"),

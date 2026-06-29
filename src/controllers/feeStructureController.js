@@ -2,30 +2,20 @@ const FeeStructure = require("../models/feeStructureModel");
 const Class = require("../models/classModel");
 const Fee = require("../models/feeModel");
 const { ensureFeeStructureIndexes } = require("../utils/feeStructureIndexes");
+const {
+  VALID_FEE_CATEGORIES,
+  formatFeeCategoryLabel,
+  normalizeFeeCategory
+} = require("../utils/feeCategories");
 
 const populateClass = {
   path: "class_record",
   select: "name session"
 };
 
-const validFeeCategories = ["new", "returning"];
-
-const normalizeFeeCategory = (feeCategory = "") =>
-  feeCategory.toString().trim().toLowerCase();
-
-const formatFeeCategoryLabel = (feeCategory = "") => {
-  const normalizedCategory = normalizeFeeCategory(feeCategory);
-
-  if (normalizedCategory === "new") {
-    return "Newly admitted";
-  }
-
-  if (normalizedCategory === "returning") {
-    return "Returning/old";
-  }
-
-  return "Selected";
-};
+const validFeeCategoryLabels = VALID_FEE_CATEGORIES.map(
+  formatFeeCategoryLabel
+).join(", ");
 
 const isLegacyDuplicateIndexError = (error) => {
   const keyFields = Object.keys(error.keyPattern || {});
@@ -100,9 +90,9 @@ const validateFeeStructurePayload = async (payload) => {
     };
   }
 
-  if (!validFeeCategories.includes(feeCategory)) {
+  if (!VALID_FEE_CATEGORIES.includes(feeCategory)) {
     return {
-      message: "Fee category must be new or returning"
+      message: `Fee category must be one of: ${validFeeCategoryLabels}`
     };
   }
 
@@ -367,16 +357,16 @@ const upsertBothFeeStructures = async (req, res) => {
             items: req.body.items
           }
         ]
-      : [
-          Array.isArray(req.body.new_items) && {
-            fee_category: "new",
-            items: req.body.new_items
-          },
-          Array.isArray(req.body.returning_items) && {
-            fee_category: "returning",
-            items: req.body.returning_items
-          }
-        ].filter(Boolean);
+      : VALID_FEE_CATEGORIES.map((feeCategory) => {
+          const itemKey = `${feeCategory}_items`;
+
+          return (
+            Array.isArray(req.body[itemKey]) && {
+              fee_category: feeCategory,
+              items: req.body[itemKey]
+            }
+          );
+        }).filter(Boolean);
 
     if (categories.length === 0) {
       return res.status(400).json({
@@ -460,7 +450,7 @@ const upsertBothFeeStructures = async (req, res) => {
       message:
         savedStructures.length === 1
           ? `Payment structure saved for ${formatFeeCategoryLabel(savedStructures[0].fee_category)} students`
-          : "Payment structures saved for newly admitted and returning students",
+          : "Payment structures saved for selected student categories",
       feeStructures: savedStructures
     });
 

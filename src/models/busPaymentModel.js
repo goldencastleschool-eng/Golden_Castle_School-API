@@ -1,4 +1,7 @@
 const mongoose = require("mongoose");
+const {
+  VALID_BUS_PAYMENT_CATEGORIES
+} = require("../utils/busPaymentCategories");
 
 const busPaymentSchema = new mongoose.Schema(
   {
@@ -51,6 +54,12 @@ const busPaymentSchema = new mongoose.Schema(
         }
       }
     ],
+
+    payment_category: {
+      type: String,
+      enum: VALID_BUS_PAYMENT_CATEGORIES,
+      default: "both"
+    },
 
     amount: {
       type: Number,

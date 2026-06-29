@@ -12,6 +12,11 @@ const {
 const {
   studentBelongsToTermClass
 } = require("../utils/studentTermEnrollment");
+const {
+  VALID_BUS_PAYMENT_CATEGORIES,
+  formatBusPaymentCategoryLabel,
+  normalizeBusPaymentCategory
+} = require("../utils/busPaymentCategories");
 
 const populateRoute = {
   path: "route",
@@ -41,7 +46,7 @@ const populatePayment = [
   populateRoute,
   {
     path: "enrollment",
-    select: "class class_record pickup_point status",
+    select: "class class_record pickup_point payment_category status",
     populate: {
       path: "class_record",
       select: "name session"
@@ -54,6 +59,14 @@ const validTerms = ["First Term", "Second Term", "Third Term"];
 const normalizeText = (value = "") => value.toString().trim();
 
 const normalizeLowerText = (value = "") => normalizeText(value).toLowerCase();
+
+const getBusPaymentCategoryQuery = (category = "both") => {
+  const normalizedCategory = normalizeBusPaymentCategory(category);
+
+  return normalizedCategory === "both"
+    ? { $in: ["both", null, ""] }
+    : normalizedCategory;
+};
 
 const normalizePickupPoints = (value = []) => {
   if (Array.isArray(value)) {
@@ -111,6 +124,10 @@ const getBusPaymentQuery = (reqQuery = {}) => {
     query.term = reqQuery.term;
   }
 
+  if (reqQuery.payment_category) {
+    query.payment_category = getBusPaymentCategoryQuery(reqQuery.payment_category);
+  }
+
   return query;
 };
 
@@ -131,6 +148,10 @@ const getBusEnrollmentQuery = (reqQuery = {}) => {
 
   if (reqQuery.term) {
     query.term = reqQuery.term;
+  }
+
+  if (reqQuery.payment_category) {
+    query.payment_category = getBusPaymentCategoryQuery(reqQuery.payment_category);
   }
 
   if (reqQuery.status) {
@@ -421,6 +442,10 @@ const getFeeStructures = async (req, res) => {
       query.term = req.query.term;
     }
 
+    if (req.query.payment_category) {
+      query.payment_category = getBusPaymentCategoryQuery(req.query.payment_category);
+    }
+
     const structuresQuery = BusFeeStructure.find(query)
       .populate(populateRoute)
       .sort({ session: -1, term: 1, createdAt: -1 });
@@ -441,6 +466,7 @@ const saveFeeStructurePayload = async (payload, existingStructure = null) => {
   const routeId = payload.route;
   const session = normalizeText(payload.session);
   const term = payload.term;
+  const paymentCategory = normalizeBusPaymentCategory(payload.payment_category);
   const items = normalizeItems(payload.items);
   const amount =
     items.length > 0
@@ -456,6 +482,12 @@ const saveFeeStructurePayload = async (payload, existingStructure = null) => {
   if (!validTerms.includes(term)) {
     return {
       message: "A valid term is required"
+    };
+  }
+
+  if (!VALID_BUS_PAYMENT_CATEGORIES.includes(paymentCategory)) {
+    return {
+      message: "Select a valid bus payment category"
     };
   }
 
@@ -479,10 +511,26 @@ const saveFeeStructurePayload = async (payload, existingStructure = null) => {
     };
   }
 
+  const existingSameStructure = await BusFeeStructure.findOne({
+    route: route._id,
+    session,
+    term,
+    payment_category: getBusPaymentCategoryQuery(paymentCategory),
+    ...(existingStructure ? { _id: { $ne: existingStructure._id } } : {})
+  });
+
+  if (existingSameStructure) {
+    return {
+      message:
+        `A ${formatBusPaymentCategoryLabel(paymentCategory)} bus payment structure already exists for this route, session, and term`
+    };
+  }
+
   if (existingStructure) {
     existingStructure.route = route._id;
     existingStructure.session = session;
     existingStructure.term = term;
+    existingStructure.payment_category = paymentCategory;
     existingStructure.items = items;
     existingStructure.amount = amount;
 
@@ -497,6 +545,7 @@ const saveFeeStructurePayload = async (payload, existingStructure = null) => {
     route: route._id,
     session,
     term,
+    payment_category: paymentCategory,
     items,
     amount
   });
@@ -547,7 +596,10 @@ const updateFeeStructure = async (req, res) => {
     const paymentCount = await BusPayment.countDocuments({
       route: structure.route,
       session: structure.session,
-      term: structure.term
+      term: structure.term,
+      payment_category: getBusPaymentCategoryQuery(
+        structure.payment_category || "both"
+      )
     });
 
     if (
@@ -555,7 +607,9 @@ const updateFeeStructure = async (req, res) => {
       (
         req.body.route?.toString() !== structure.route.toString() ||
         normalizeText(req.body.session) !== structure.session ||
-        req.body.term !== structure.term
+        req.body.term !== structure.term ||
+        normalizeBusPaymentCategory(req.body.payment_category) !==
+          (structure.payment_category || "both")
       )
     ) {
       return res.status(400).json({
@@ -577,11 +631,15 @@ const updateFeeStructure = async (req, res) => {
         {
           route: result.structure.route,
           session: result.structure.session,
-          term: result.structure.term
+          term: result.structure.term,
+          payment_category: getBusPaymentCategoryQuery(
+            result.structure.payment_category || "both"
+          )
         },
         {
           expected_amount_at_payment: result.structure.amount,
-          expected_items_at_payment: result.structure.items
+          expected_items_at_payment: result.structure.items,
+          payment_category: result.structure.payment_category || "both"
         }
       );
     }
@@ -617,7 +675,10 @@ const deleteFeeStructure = async (req, res) => {
     const paymentCount = await BusPayment.countDocuments({
       route: structure.route,
       session: structure.session,
-      term: structure.term
+      term: structure.term,
+      payment_category: getBusPaymentCategoryQuery(
+        structure.payment_category || "both"
+      )
     });
 
     if (paymentCount > 0) {
@@ -667,9 +728,11 @@ const createEnrollments = async (req, res) => {
       class_record,
       route,
       pickup_point,
+      payment_category,
       session,
       term
     } = req.body;
+    const paymentCategory = normalizeBusPaymentCategory(payment_category);
 
     const selectedStudentIds = Array.isArray(studentIds)
       ? studentIds.filter(Boolean)
@@ -690,6 +753,12 @@ const createEnrollments = async (req, res) => {
     if (!validTerms.includes(term)) {
       return res.status(400).json({
         message: "A valid term is required"
+      });
+    }
+
+    if (!VALID_BUS_PAYMENT_CATEGORIES.includes(paymentCategory)) {
+      return res.status(400).json({
+        message: "Select a valid bus payment category"
       });
     }
 
@@ -744,6 +813,7 @@ const createEnrollments = async (req, res) => {
         class: classRecord.name,
         route: routeRecord._id,
         pickup_point: normalizeText(pickup_point),
+        payment_category: paymentCategory,
         session,
         term,
         status: "active"
@@ -800,7 +870,18 @@ const updateEnrollment = async (req, res) => {
       enrollment.route = route._id;
     }
 
+    const paymentCategory = normalizeBusPaymentCategory(
+      req.body.payment_category || enrollment.payment_category
+    );
+
+    if (!VALID_BUS_PAYMENT_CATEGORIES.includes(paymentCategory)) {
+      return res.status(400).json({
+        message: "Select a valid bus payment category"
+      });
+    }
+
     enrollment.pickup_point = normalizeText(req.body.pickup_point);
+    enrollment.payment_category = paymentCategory;
     enrollment.status = req.body.status || enrollment.status;
     enrollment.stop_reason =
       enrollment.status === "active" ? "" : normalizeText(req.body.stop_reason);
@@ -910,13 +991,14 @@ const buildPaymentSnapshot = async (payload, excludedPaymentId = "") => {
   const structure = await BusFeeStructure.findOne({
     route: enrollment.route._id || enrollment.route,
     session: enrollment.session,
-    term: enrollment.term
+    term: enrollment.term,
+    payment_category: getBusPaymentCategoryQuery(enrollment.payment_category || "both")
   });
 
   if (!structure) {
     return {
       message:
-        "Create a bus payment structure for this route, session, and term before recording payment"
+        `Create a bus payment structure for this route, session, term, and ${formatBusPaymentCategoryLabel(enrollment.payment_category)} category before recording payment`
     };
   }
 
@@ -971,6 +1053,7 @@ const createPayment = async (req, res) => {
       term: snapshot.enrollment.term,
       expected_amount_at_payment: snapshot.structure.amount,
       expected_items_at_payment: snapshot.structure.items,
+      payment_category: snapshot.structure.payment_category || "both",
       amount: snapshot.amount,
       payment_date: new Date(req.body.payment_date),
       payment_method: normalizeText(req.body.payment_method),
@@ -1016,6 +1099,7 @@ const updatePayment = async (req, res) => {
     payment.term = snapshot.enrollment.term;
     payment.expected_amount_at_payment = snapshot.structure.amount;
     payment.expected_items_at_payment = snapshot.structure.items;
+    payment.payment_category = snapshot.structure.payment_category || "both";
     payment.amount = snapshot.amount;
     payment.payment_date = new Date(req.body.payment_date);
     payment.payment_method = normalizeText(req.body.payment_method);

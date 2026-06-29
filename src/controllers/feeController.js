@@ -104,12 +104,14 @@ const getStudentPaidForTerm = async ({
   student,
   session,
   term,
+  feeCategory,
   excludedFeeId = ""
 }) => {
   const query = {
     student,
     session,
-    term
+    term,
+    fee_category: feeCategory
   };
 
   if (excludedFeeId) {
@@ -180,6 +182,12 @@ const buildFeeSnapshot = async (payload, excludedFeeId = "") => {
     };
   }
 
+  if (feeCategory === "vip") {
+    return {
+      message: "VIP students are fee-exempt and do not require payment records"
+    };
+  }
+
   const feeStructure = await FeeStructure.findOne({
     class_record: classRecordId,
     session,
@@ -198,6 +206,7 @@ const buildFeeSnapshot = async (payload, excludedFeeId = "") => {
     student,
     session,
     term,
+    feeCategory,
     excludedFeeId
   });
   const expectedAmount = Number(feeStructure.amount || 0);
@@ -408,20 +417,25 @@ const getMyFees = async (req, res) => {
           (sum, fee) => sum + Number(fee.amount || 0),
           0
         );
-        const expectedAmount = Number(
-          feeStructure?.amount ||
-            payments[0]?.expected_amount_at_payment ||
-            0
-        );
+        const isVipStudentFee = seed.fee_category === "vip";
+        const expectedAmount = isVipStudentFee
+          ? 0
+          : Number(
+              feeStructure?.amount ||
+                payments[0]?.expected_amount_at_payment ||
+                0
+            );
         const balance = Math.max(expectedAmount - totalPaid, 0);
         const status =
-          expectedAmount <= 0 && totalPaid <= 0
-            ? "No Structure"
-            : totalPaid <= 0
-              ? "Unpaid"
-              : balance > 0
-                ? "Part Payment"
-                : "Fully Paid";
+          isVipStudentFee
+            ? "Exempt"
+            : expectedAmount <= 0 && totalPaid <= 0
+              ? "No Structure"
+              : totalPaid <= 0
+                ? "Unpaid"
+                : balance > 0
+                  ? "Part Payment"
+                  : "Fully Paid";
 
         return {
           session: seed.session,

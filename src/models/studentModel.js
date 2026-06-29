@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const { VALID_FEE_CATEGORIES } = require("../utils/feeCategories");
 
 const studentSchema = new mongoose.Schema(
   {
@@ -81,7 +82,7 @@ const studentSchema = new mongoose.Schema(
         fee_category: {
           type: String,
           required: true,
-          enum: ["new", "returning"],
+          enum: VALID_FEE_CATEGORIES,
           default: "returning"
         },
         class_record: {

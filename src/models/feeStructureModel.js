@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const { VALID_FEE_CATEGORIES } = require("../utils/feeCategories");
 
 const feeStructureSchema = new mongoose.Schema(
   {
@@ -23,7 +24,7 @@ const feeStructureSchema = new mongoose.Schema(
     fee_category: {
       type: String,
       required: true,
-      enum: ["new", "returning"],
+      enum: VALID_FEE_CATEGORIES,
       default: "returning"
     },
 

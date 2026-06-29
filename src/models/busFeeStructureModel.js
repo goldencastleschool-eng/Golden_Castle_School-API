@@ -1,4 +1,7 @@
 const mongoose = require("mongoose");
+const {
+  VALID_BUS_PAYMENT_CATEGORIES
+} = require("../utils/busPaymentCategories");
 
 const busFeeStructureSchema = new mongoose.Schema(
   {
@@ -18,6 +21,12 @@ const busFeeStructureSchema = new mongoose.Schema(
       type: String,
       required: true,
       enum: ["First Term", "Second Term", "Third Term"]
+    },
+
+    payment_category: {
+      type: String,
+      enum: VALID_BUS_PAYMENT_CATEGORIES,
+      default: "both"
     },
 
     items: [
@@ -47,7 +56,7 @@ const busFeeStructureSchema = new mongoose.Schema(
 );
 
 busFeeStructureSchema.index(
-  { route: 1, session: 1, term: 1 },
+  { route: 1, session: 1, term: 1, payment_category: 1 },
   { unique: true }
 );
 busFeeStructureSchema.index({ session: 1, term: 1 });

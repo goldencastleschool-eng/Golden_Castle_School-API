@@ -17,6 +17,11 @@ const {
   applyListQueryOptions,
   getListQueryOptions
 } = require("../utils/listQueryOptions");
+const {
+  VALID_FEE_CATEGORIES,
+  formatFeeCategoryLabel,
+  normalizeFeeCategory
+} = require("../utils/feeCategories");
 const { isFormTeacher } = require("../utils/teacherAssignments");
 
 const sanitizeStudent = (student) => {
@@ -51,10 +56,9 @@ const isActiveStudentRecord = (student) =>
   !student.status || student.status === "active";
 
 const validFeeTerms = ["First Term", "Second Term", "Third Term"];
-const validFeeCategories = ["new", "returning"];
-
-const normalizeFeeCategory = (feeCategory = "") =>
-  feeCategory.toString().trim().toLowerCase();
+const validFeeCategoryLabels = VALID_FEE_CATEGORIES.map(
+  formatFeeCategoryLabel
+).join(", ");
 
 const parseSessionStartYear = (session = "") => {
   const match = session.toString().match(/\d{4}/);
@@ -144,8 +148,8 @@ const upsertFeeEnrollment = (student, {
     return "A valid admission term is required";
   }
 
-  if (!validFeeCategories.includes(normalizedCategory)) {
-    return "Student fee category must be new or returning";
+  if (!VALID_FEE_CATEGORIES.includes(normalizedCategory)) {
+    return `Student fee category must be one of: ${validFeeCategoryLabels}`;
   }
 
   const existingEnrollment = student.fee_enrollments.find(
