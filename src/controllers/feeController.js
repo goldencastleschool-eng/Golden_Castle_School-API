@@ -74,7 +74,8 @@ const buildReceiptNumber = (feeId) =>
 const getRecordId = (record) => record?._id || record || "";
 
 const getFeeCategoryForStudentTerm = (student, session, term) =>
-  getStudentFeeEnrollment(student, session, term)?.fee_category || "returning";
+  getStudentEffectiveFeeEnrollment(student, session, term)?.fee_category ||
+  "returning";
 
 const buildStudentFeeKey = ({ session, term, feeCategory }) =>
   [session, term, feeCategory].join("|");
@@ -169,8 +170,7 @@ const buildFeeSnapshot = async (payload, excludedFeeId = "") => {
     session,
     term
   );
-  const exactEnrollment = getStudentFeeEnrollment(selectedStudent, session, term);
-  const feeCategory = exactEnrollment?.fee_category || "returning";
+  const feeCategory = enrollment?.fee_category || "returning";
   const classRecordId =
     enrollment?.class_record ||
     selectedStudent.class_record?._id ||
