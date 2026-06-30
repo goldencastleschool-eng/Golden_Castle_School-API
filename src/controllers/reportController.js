@@ -85,6 +85,32 @@ const getStudentEnrollment = (student, session, term) => {
   );
 };
 
+const validFeeTerms = ["First Term", "Second Term", "Third Term"];
+
+const getTermIndex = (term = "") => {
+  const termIndex = validFeeTerms.indexOf(term);
+
+  return termIndex === -1 ? validFeeTerms.length : termIndex;
+};
+
+const getStudentEffectiveEnrollment = (student, session, term) => {
+  const enrollments = Array.isArray(student.fee_enrollments)
+    ? student.fee_enrollments
+    : [];
+  const targetTermIndex = getTermIndex(term);
+
+  return enrollments
+    .filter(
+      (enrollment) =>
+        enrollment.session === session &&
+        getTermIndex(enrollment.term) <= targetTermIndex
+    )
+    .sort(
+      (firstEnrollment, secondEnrollment) =>
+        getTermIndex(secondEnrollment.term) - getTermIndex(firstEnrollment.term)
+    )[0];
+};
+
 const getStudentClassSnapshot = (student, enrollment, session) => {
   const enrollmentClassRecord = enrollment?.class_record;
   const studentClassRecord = student.class_record;
@@ -118,10 +144,11 @@ const buildStudentReportRows = ({
   return students
     .filter(isActiveStudent)
     .map((student) => {
-      const enrollment = getStudentEnrollment(student, session, term);
+      const enrollment = getStudentEffectiveEnrollment(student, session, term);
+      const exactEnrollment = getStudentEnrollment(student, session, term);
       const isCurrentSessionStudent = student.current_session === session;
 
-      if (!enrollment && !isCurrentSessionStudent) {
+      if (!enrollment && !exactEnrollment && !isCurrentSessionStudent) {
         return null;
       }
 
