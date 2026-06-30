@@ -15,6 +15,72 @@ const invalidLoginMessage =
 const missingLoginMessage = (identifierLabel = "username") =>
   `Enter your ${identifierLabel} and password to continue.`;
 
+const AUTH_COOKIE_NAME = process.env.AUTH_COOKIE_NAME || "gcs_auth_token";
+const AUTH_COOKIE_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
+
+const getAuthCookieOptions = () => {
+  const isProduction = process.env.NODE_ENV === "production";
+
+  return {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: isProduction ? "none" : "lax",
+    path: "/",
+    maxAge: AUTH_COOKIE_MAX_AGE,
+  };
+};
+
+const setAuthCookie = (res, token) => {
+  res.cookie(AUTH_COOKIE_NAME, token, getAuthCookieOptions());
+};
+
+const clearAuthCookie = (res) => {
+  const { maxAge, ...cookieOptions } = getAuthCookieOptions();
+
+  res.clearCookie(AUTH_COOKIE_NAME, cookieOptions);
+};
+
+const withLegacyToken = (payload, token) =>
+  process.env.LEGACY_TOKEN_RESPONSE === "true"
+    ? {
+        ...payload,
+        token,
+      }
+    : payload;
+
+const formatAdminAccount = (admin) => ({
+  id: admin._id,
+  username: admin.username,
+  role: admin.role,
+});
+
+const formatExecutiveAccount = (executive) => ({
+  id: executive._id,
+  username: executive.username,
+  role: executive.role,
+});
+
+const formatStudentAccount = (student) => ({
+  id: student._id,
+  full_name: student.full_name,
+  admission_no: student.admission_no,
+  class: student.class,
+  current_session: student.current_session,
+  role: "student",
+});
+
+const formatTeacherAccount = (teacher) => ({
+  id: teacher._id,
+  full_name: teacher.full_name,
+  username: teacher.username,
+  session: teacher.session,
+  assigned_class: teacher.assigned_class,
+  assigned_class_record: teacher.assigned_class_record,
+  assignment_type: getTeacherAssignmentType(teacher),
+  status: teacher.status,
+  role: "teacher",
+});
+
 // ======================
 // ADMIN LOGIN
 // ======================
@@ -58,15 +124,13 @@ const adminLogin = async (req, res) => {
       admin._id,
       admin.role
     );
+    setAuthCookie(res, token);
 
-    return res.status(200).json({
-      token,
-      admin: {
-        id: admin._id,
-        username: admin.username,
-        role: admin.role,
-      },
-    });
+    return res.status(200).json(
+      withLegacyToken({
+        admin: formatAdminAccount(admin),
+      }, token)
+    );
   } catch (error) {
     return res.status(500).json({
       message: error.message,
@@ -116,15 +180,13 @@ const executiveLogin = async (req, res) => {
       executive._id,
       executive.role
     );
+    setAuthCookie(res, token);
 
-    return res.status(200).json({
-      token,
-      executive: {
-        id: executive._id,
-        username: executive.username,
-        role: executive.role,
-      },
-    });
+    return res.status(200).json(
+      withLegacyToken({
+        executive: formatExecutiveAccount(executive),
+      }, token)
+    );
   } catch (error) {
     return res.status(500).json({
       message: error.message,
@@ -174,17 +236,13 @@ const studentLogin = async (req, res) => {
       student._id,
       "student"
     );
+    setAuthCookie(res, token);
 
-    return res.status(200).json({
-      token,
-      student: {
-        id: student._id,
-        full_name: student.full_name,
-        admission_no: student.admission_no,
-        class: student.class,
-        current_session: student.current_session,
-      },
-    });
+    return res.status(200).json(
+      withLegacyToken({
+        student: formatStudentAccount(student),
+      }, token)
+    );
   } catch (error) {
     return res.status(500).json({
       message: error.message,
@@ -196,6 +254,8 @@ const studentLogin = async (req, res) => {
 // LOGOUT
 // ======================
 const logout = (req, res) => {
+  clearAuthCookie(res);
+
   return res.status(200).json({
     message: "Logged out successfully",
   });
@@ -237,20 +297,80 @@ const teacherLogin = async (req, res) => {
     }
 
     const token = generateToken(teacher._id, "teacher");
+    setAuthCookie(res, token);
 
-    return res.status(200).json({
-      token,
-      teacher: {
-        id: teacher._id,
-        full_name: teacher.full_name,
-        username: teacher.username,
-        session: teacher.session,
-        assigned_class: teacher.assigned_class,
-        assigned_class_record: teacher.assigned_class_record,
-        assignment_type: getTeacherAssignmentType(teacher),
-        status: teacher.status,
-        role: "teacher",
-      },
+    return res.status(200).json(
+      withLegacyToken({
+        teacher: formatTeacherAccount(teacher),
+      }, token)
+    );
+  } catch (error) {
+    return res.status(500).json({
+      message: error.message,
+    });
+  }
+};
+
+const getCurrentUser = async (req, res) => {
+  try {
+    if (req.user.role === "student") {
+      const student = await Student.findById(req.user.id);
+
+      if (!student) {
+        return res.status(404).json({ message: "Student not found" });
+      }
+
+      return res.json({
+        user: formatStudentAccount(student),
+      });
+    }
+
+    if (req.user.role === "teacher") {
+      const teacher = await Teacher.findById(req.user.id);
+
+      if (!teacher) {
+        return res.status(404).json({ message: "Teacher not found" });
+      }
+
+      if (teacher.status === "inactive") {
+        clearAuthCookie(res);
+        return res.status(403).json({
+          message: "This teacher account has been deactivated",
+        });
+      }
+
+      return res.json({
+        user: formatTeacherAccount(teacher),
+      });
+    }
+
+    if (["principal", "chairman"].includes(req.user.role)) {
+      const executive = await ExecutiveAccount.findById(req.user.id);
+
+      if (!executive) {
+        return res.status(404).json({ message: "Executive account not found" });
+      }
+
+      if (executive.status === "inactive") {
+        clearAuthCookie(res);
+        return res.status(403).json({
+          message: "This executive account has been deactivated",
+        });
+      }
+
+      return res.json({
+        user: formatExecutiveAccount(executive),
+      });
+    }
+
+    const admin = await Admin.findById(req.user.id);
+
+    if (!admin) {
+      return res.status(404).json({ message: "Admin not found" });
+    }
+
+    return res.json({
+      user: formatAdminAccount(admin),
     });
   } catch (error) {
     return res.status(500).json({
@@ -362,5 +482,6 @@ module.exports = {
   teacherLogin,
   changeStudentPassword,
   changeTeacherPassword,
+  getCurrentUser,
   logout,
 };

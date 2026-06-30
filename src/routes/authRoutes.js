@@ -9,6 +9,7 @@ const {
   teacherLogin,
   changeStudentPassword,
   changeTeacherPassword,
+  getCurrentUser,
   logout
 } = require("../controllers/authController");
 
@@ -23,6 +24,8 @@ router.post("/executive/login", loginRateLimit, executiveLogin);
 router.post("/student/login", loginRateLimit, studentLogin);
 
 router.post("/teacher/login", loginRateLimit, teacherLogin);
+
+router.get("/me", protect, getCurrentUser);
 
 router.put(
   "/student/password",
