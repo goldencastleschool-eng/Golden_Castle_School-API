@@ -18,24 +18,33 @@ const missingLoginMessage = (identifierLabel = "username") =>
 const AUTH_COOKIE_NAME = process.env.AUTH_COOKIE_NAME || "gcs_auth_token";
 const AUTH_COOKIE_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
 
-const getAuthCookieOptions = () => {
+const isLocalOrigin = (origin = "") =>
+  origin.includes("localhost") || origin.includes("127.0.0.1");
+
+const getAuthCookieOptions = (req) => {
+  const origin = req?.headers?.origin || "";
   const isProduction = process.env.NODE_ENV === "production";
+  const isHttpsRequest =
+    req?.secure || req?.headers?.["x-forwarded-proto"] === "https";
+  const isCrossSiteHttps = origin.startsWith("https://") && !isLocalOrigin(origin);
+  const useSecureCrossSiteCookie =
+    isProduction || isHttpsRequest || isCrossSiteHttps;
 
   return {
     httpOnly: true,
-    secure: isProduction,
-    sameSite: isProduction ? "none" : "lax",
+    secure: useSecureCrossSiteCookie,
+    sameSite: useSecureCrossSiteCookie ? "none" : "lax",
     path: "/",
     maxAge: AUTH_COOKIE_MAX_AGE,
   };
 };
 
-const setAuthCookie = (res, token) => {
-  res.cookie(AUTH_COOKIE_NAME, token, getAuthCookieOptions());
+const setAuthCookie = (req, res, token) => {
+  res.cookie(AUTH_COOKIE_NAME, token, getAuthCookieOptions(req));
 };
 
-const clearAuthCookie = (res) => {
-  const { maxAge, ...cookieOptions } = getAuthCookieOptions();
+const clearAuthCookie = (req, res) => {
+  const { maxAge, ...cookieOptions } = getAuthCookieOptions(req);
 
   res.clearCookie(AUTH_COOKIE_NAME, cookieOptions);
 };
@@ -124,7 +133,7 @@ const adminLogin = async (req, res) => {
       admin._id,
       admin.role
     );
-    setAuthCookie(res, token);
+    setAuthCookie(req, res, token);
 
     return res.status(200).json(
       withLegacyToken({
@@ -180,7 +189,7 @@ const executiveLogin = async (req, res) => {
       executive._id,
       executive.role
     );
-    setAuthCookie(res, token);
+    setAuthCookie(req, res, token);
 
     return res.status(200).json(
       withLegacyToken({
@@ -236,7 +245,7 @@ const studentLogin = async (req, res) => {
       student._id,
       "student"
     );
-    setAuthCookie(res, token);
+    setAuthCookie(req, res, token);
 
     return res.status(200).json(
       withLegacyToken({
@@ -254,7 +263,7 @@ const studentLogin = async (req, res) => {
 // LOGOUT
 // ======================
 const logout = (req, res) => {
-  clearAuthCookie(res);
+  clearAuthCookie(req, res);
 
   return res.status(200).json({
     message: "Logged out successfully",
@@ -297,7 +306,7 @@ const teacherLogin = async (req, res) => {
     }
 
     const token = generateToken(teacher._id, "teacher");
-    setAuthCookie(res, token);
+    setAuthCookie(req, res, token);
 
     return res.status(200).json(
       withLegacyToken({
@@ -333,7 +342,7 @@ const getCurrentUser = async (req, res) => {
       }
 
       if (teacher.status === "inactive") {
-        clearAuthCookie(res);
+        clearAuthCookie(req, res);
         return res.status(403).json({
           message: "This teacher account has been deactivated",
         });
@@ -352,7 +361,7 @@ const getCurrentUser = async (req, res) => {
       }
 
       if (executive.status === "inactive") {
-        clearAuthCookie(res);
+        clearAuthCookie(req, res);
         return res.status(403).json({
           message: "This executive account has been deactivated",
         });
