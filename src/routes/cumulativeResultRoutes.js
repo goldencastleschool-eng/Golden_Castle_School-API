@@ -6,6 +6,7 @@ const {
   uploadCumulativeResult,
   getAllCumulativeResults,
   getStudentCumulativeResults,
+  getApprovedTeacherCumulativeResults,
   updateCumulativeResult,
   deleteCumulativeResult,
   viewCumulativeResult,
@@ -38,6 +39,13 @@ router.get(
   "/student/:studentId",
   protect,
   getStudentCumulativeResults
+);
+
+router.get(
+  "/teacher",
+  protect,
+  authorizeRoles("teacher"),
+  getApprovedTeacherCumulativeResults
 );
 
 router.put(

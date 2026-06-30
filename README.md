@@ -7,6 +7,7 @@ Express/MongoDB backend for the Golden Castle School management system and porta
 ```bash
 npm run dev
 npm start
+npm test
 npm run indexes:report
 npm run indexes:sync
 npm run migrate:pdf-b2
@@ -57,10 +58,13 @@ Successful admin writes invalidate those report/dashboard cache prefixes.
 
 ## Deployment
 
-Deploy on Render or another Node host with:
+Deploy on Render with:
 
 ```bash
 npm start
 ```
 
-Make sure MongoDB Atlas allows the deployment IP or uses an appropriate access rule.
+Use `/healthz` as the Render health check path. Make sure MongoDB Atlas allows
+the Render service to connect, either through the correct network access rule or
+your chosen managed MongoDB configuration. See `../PRODUCTION.md` for the full
+Render deployment checklist.

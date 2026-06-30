@@ -16,7 +16,7 @@
     "create:executive": "node src/scripts/createExecutiveAccount.js",
     "upstash:test": "node src/scripts/testUpstashConnection.js",
     "upstash:test:debug": "node -e \"require('dotenv').config(); const tls = require('tls'); const host = new URL(process.env.UPSTASH_REDIS_REST_URL).hostname; const socket = tls.connect({ host, port: 443, servername: host, rejectUnauthorized: false }, () => { const cert = socket.getPeerCertificate(true); console.log({ authorized: socket.authorized, authorizationError: socket.authorizationError, subject: cert.subject, issuer: cert.issuer, valid_from: cert.valid_from, valid_to: cert.valid_to }); socket.end(); }); socket.on('error', (error) => { console.error(error.message); process.exit(1); });\"",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test"
   },
   "keywords": [],
   "author": "",

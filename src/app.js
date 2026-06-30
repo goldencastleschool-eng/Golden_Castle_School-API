@@ -1,8 +1,10 @@
 const express = require('express');
 const cors = require('cors');
+const mongoose = require("mongoose");
 const app = express();
 const { createCache } = require("./middleware/cacheMiddleware");
 const { createRateLimit } = require("./middleware/rateLimitMiddleware");
+const redisStore = require("./utils/upstashRedis");
 
 const studentRoutes = require("./routes/studentRoutes");
 const classRoutes = require("./routes/classRoutes");
@@ -45,6 +47,29 @@ const securityHeaders = (req, res, next) => {
   next();
 };
 
+const mongoStates = {
+  0: "disconnected",
+  1: "connected",
+  2: "connecting",
+  3: "disconnecting"
+};
+
+const getServiceStatus = () => {
+  const mongoState = mongoose.connection.readyState;
+
+  return {
+    status: mongoState === 1 ? "ready" : "degraded",
+    uptime_seconds: Math.round(process.uptime()),
+    mongo: {
+      state: mongoStates[mongoState] || "unknown",
+      ready: mongoState === 1
+    },
+    redis: {
+      mode: redisStore.isConfigured() ? "upstash" : "memory-fallback"
+    }
+  };
+};
+
 app.use(securityHeaders);
 app.set("trust proxy", 1);
 app.use(cors({
@@ -74,6 +99,18 @@ app.use(
 
 app.get('/', createCache({ ttlSeconds: 300, prefix: "health" }), (req, res) => {
     res.json({ message: 'Welcome to the School Result System API' } );
+});
+
+app.get("/healthz", (req, res) => {
+  res.json({
+    status: "ok",
+    uptime_seconds: Math.round(process.uptime())
+  });
+});
+
+app.get("/readyz", (req, res) => {
+  const status = getServiceStatus();
+  res.status(status.status === "ready" ? 200 : 503).json(status);
 });
 
 

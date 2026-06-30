@@ -1,5 +1,6 @@
 const CumulativeResult = require("../models/cumulativeResultModel");
 const Student = require("../models/studentModel");
+const Teacher = require("../models/teacherModel");
 const ResultAccess = require("../models/resultAccessModel");
 const {
   deletePdfFile,
@@ -32,10 +33,22 @@ const buildCumulativeResultQuery = () =>
     ]
   }).select("-pdf_data");
 
+const normalizeClassName = (className = "") =>
+  className.toString().trim().toLowerCase().replace(/\s+/g, "");
+
+const escapeRegex = (value = "") =>
+  value.toString().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 const enforceCumulativeResultAccess = async (req, result) => {
+  if (req.user.role === "admin") {
+    return {
+      allowed: true
+    };
+  }
+
   if (
     req.user.role === "student" &&
-    result.student._id.toString() !== req.user.id
+    result.student?._id?.toString() !== req.user.id
   ) {
     return {
       allowed: false,
@@ -52,6 +65,53 @@ const enforceCumulativeResultAccess = async (req, result) => {
     if (
       !access?.cumulative_session ||
       result.session !== access.cumulative_session
+    ) {
+      return {
+        allowed: false,
+        status: 403,
+        message: "This cumulative result is not currently available"
+      };
+    }
+  }
+
+  if (req.user.role === "teacher") {
+    const teacher = await Teacher.findById(req.user.id);
+
+    if (!teacher) {
+      return {
+        allowed: false,
+        status: 404,
+        message: "Teacher not found"
+      };
+    }
+
+    if (teacher.status === "inactive") {
+      return {
+        allowed: false,
+        status: 403,
+        message: "This teacher account is inactive"
+      };
+    }
+
+    const access = await ResultAccess.findOne({
+      key: "active-result-access"
+    });
+
+    const teacherClass = normalizeClassName(teacher.assigned_class);
+    const resultClass = normalizeClassName(result.class);
+    const teacherClassRecordId = teacher.assigned_class_record?.toString();
+    const resultClassRecordId = result.class_record?.toString();
+    const resultTeacherId = result.assigned_teacher?.toString();
+    const belongsToTeacher =
+      resultTeacherId && resultClassRecordId
+        ? resultTeacherId === teacher._id.toString() &&
+          teacherClassRecordId === resultClassRecordId
+        : teacherClass && teacherClass === resultClass;
+
+    if (
+      !access?.cumulative_session ||
+      result.session !== access.cumulative_session ||
+      !belongsToTeacher
     ) {
       return {
         allowed: false,
@@ -109,7 +169,8 @@ const sendCumulativeResultPdf = async (req, res, dispositionType) => {
 const uploadCumulativeResult = async (req, res) => {
   try {
     const {
-      studentId,
+      assigned_teacher,
+      class_record,
       session,
       class: studentClass
     } = req.body;
@@ -126,22 +187,35 @@ const uploadCumulativeResult = async (req, res) => {
       });
     }
 
-    if (!studentId || !session || !studentClass) {
+    if (!assigned_teacher || !class_record || !session || !studentClass) {
       return res.status(400).json({
-        message: "Student, session, and class are required"
+        message: "Form teacher, class, and session are required"
       });
     }
 
-    const student = await Student.findById(studentId);
+    const teacher = await Teacher.findById(assigned_teacher);
 
-    if (!student) {
+    if (!teacher) {
       return res.status(404).json({
-        message: "Student not found"
+        message: "Teacher not found"
+      });
+    }
+
+    const teacherClassRecordId = teacher.assigned_class_record?.toString();
+
+    if (
+      teacher.status === "inactive" ||
+      teacher.assignment_type !== "form_teacher" ||
+      teacher.session !== session ||
+      teacherClassRecordId !== class_record
+    ) {
+      return res.status(400).json({
+        message: "Selected teacher is not the active form teacher for this class and session"
       });
     }
 
     const fileName = createSafeFileName(
-      student.full_name,
+      teacher.assigned_class || studentClass,
       session
     );
 
@@ -150,7 +224,8 @@ const uploadCumulativeResult = async (req, res) => {
       contentType: req.file.mimetype,
       metadata: {
         type: "cumulative-result",
-        student: studentId,
+        teacher: assigned_teacher,
+        class_record,
         session,
         class: studentClass
       }
@@ -160,7 +235,8 @@ const uploadCumulativeResult = async (req, res) => {
 
     try {
       result = await CumulativeResult.create({
-        student: studentId,
+        assigned_teacher,
+        class_record,
         session,
         class: studentClass,
         ...getPdfStorageFields(pdfUpload, {
@@ -188,6 +264,7 @@ const getAllCumulativeResults = async (req, res) => {
   try {
     const query = buildCumulativeResultQuery()
       .populate("student", "full_name admission_no class current_session")
+      .populate("assigned_teacher", "full_name username assigned_class")
       .sort({
         createdAt: -1
       });
@@ -238,6 +315,62 @@ const getStudentCumulativeResults = async (req, res) => {
     }
 
     const results = await CumulativeResult.find(query)
+      .select("-pdf_data")
+      .sort({
+        createdAt: -1
+      });
+
+    res.json(results);
+  } catch (error) {
+    res.status(500).json({
+      error: error.message
+    });
+  }
+};
+
+const getApprovedTeacherCumulativeResults = async (req, res) => {
+  try {
+    const teacher = await Teacher.findById(req.user.id);
+
+    if (!teacher) {
+      return res.status(404).json({
+        message: "Teacher not found"
+      });
+    }
+
+    if (teacher.status === "inactive") {
+      return res.json([]);
+    }
+
+    const access = await ResultAccess.findOne({
+      key: "active-result-access"
+    });
+
+    if (!access?.cumulative_session || !teacher.assigned_class) {
+      return res.json([]);
+    }
+
+    const results = await CumulativeResult.find({
+      session: access.cumulative_session,
+      $or: [
+        {
+          class_record: teacher.assigned_class_record,
+          assigned_teacher: teacher._id
+        },
+        {
+          class: new RegExp(`^${escapeRegex(teacher.assigned_class)}$`, "i")
+        }
+      ],
+      $and: [
+        {
+          $or: [
+            { pdf_file_id: { $exists: true } },
+            { pdf_data: { $exists: true } }
+          ]
+        }
+      ]
+    })
+      .populate("assigned_teacher", "full_name username assigned_class")
       .select("-pdf_data")
       .sort({
         createdAt: -1
@@ -367,6 +500,7 @@ module.exports = {
   uploadCumulativeResult,
   getAllCumulativeResults,
   getStudentCumulativeResults,
+  getApprovedTeacherCumulativeResults,
   updateCumulativeResult,
   deleteCumulativeResult,
   viewCumulativeResult,

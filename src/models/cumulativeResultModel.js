@@ -5,7 +5,19 @@ const cumulativeResultSchema = new mongoose.Schema(
     student: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Student",
-      required: true
+      default: null
+    },
+
+    class_record: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Class",
+      default: null
+    },
+
+    assigned_teacher: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Teacher",
+      default: null
     },
 
     session: {
@@ -72,6 +84,12 @@ const cumulativeResultSchema = new mongoose.Schema(
 
 cumulativeResultSchema.index({ createdAt: -1 });
 cumulativeResultSchema.index({ session: 1, class: 1, createdAt: -1 });
+cumulativeResultSchema.index({
+  session: 1,
+  class_record: 1,
+  assigned_teacher: 1,
+  createdAt: -1
+});
 cumulativeResultSchema.index(
   {
     class: "text",
