@@ -49,7 +49,7 @@ const getStudentEffectiveFeeEnrollment = (student, session, term) => {
     : [];
   const targetTermIndex = getTermIndex(term);
 
-  return enrollments
+  const effectiveEnrollment = enrollments
     .filter(
       (enrollment) =>
         enrollment.session === session &&
@@ -59,6 +59,24 @@ const getStudentEffectiveFeeEnrollment = (student, session, term) => {
       (firstEnrollment, secondEnrollment) =>
         getTermIndex(secondEnrollment.term) - getTermIndex(firstEnrollment.term)
     )[0];
+
+  if (
+    effectiveEnrollment &&
+    effectiveEnrollment.term !== term &&
+    effectiveEnrollment.fee_category === "new"
+  ) {
+    const enrollmentSnapshot =
+      typeof effectiveEnrollment.toObject === "function"
+        ? effectiveEnrollment.toObject()
+        : effectiveEnrollment;
+
+    return {
+      ...enrollmentSnapshot,
+      fee_category: "returning"
+    };
+  }
+
+  return effectiveEnrollment;
 };
 
 const formatAmount = (amount) =>
@@ -549,6 +567,123 @@ const createFee = async (req, res) => {
   }
 };
 
+const createBatchFees = async (req, res) => {
+  try {
+    const {
+      session,
+      term,
+      payment_date,
+      payment_method,
+      note,
+      payments = []
+    } = req.body;
+
+    if (!session || !term || !payment_date) {
+      return res.status(400).json({
+        message: "Session, term, and payment date are required"
+      });
+    }
+
+    if (!Array.isArray(payments) || payments.length === 0) {
+      return res.status(400).json({
+        message: "Select at least one student payment to record"
+      });
+    }
+
+    const createdFeeIds = [];
+    const errors = [];
+    const processedStudentIds = new Set();
+
+    for (const payment of payments) {
+      const studentId = payment.student;
+      const amount = Number(payment.amount);
+
+      if (!studentId) {
+        errors.push({
+          student: "",
+          message: "Student is required"
+        });
+        continue;
+      }
+
+      if (processedStudentIds.has(studentId.toString())) {
+        errors.push({
+          student: studentId,
+          message: "Duplicate student payment in this batch"
+        });
+        continue;
+      }
+
+      processedStudentIds.add(studentId.toString());
+
+      if (!Number.isFinite(amount) || amount <= 0) {
+        errors.push({
+          student: studentId,
+          message: "Amount must be greater than 0"
+        });
+        continue;
+      }
+
+      const snapshot = await buildFeeSnapshot({
+        student: studentId,
+        session,
+        term,
+        amount,
+        payment_date
+      });
+
+      if (snapshot.message) {
+        errors.push({
+          student: studentId,
+          message: snapshot.message
+        });
+        continue;
+      }
+
+      const fee = new Fee({
+        student: studentId,
+        class_record: snapshot.classRecordId,
+        class: snapshot.className,
+        session,
+        term,
+        fee_category: snapshot.feeCategory,
+        expected_amount_at_payment: snapshot.feeStructure.amount,
+        expected_items_at_payment: snapshot.feeStructure.items || [],
+        amount: snapshot.amount,
+        payment_date: new Date(payment_date),
+        payment_method: payment.payment_method || payment_method || "",
+        receipt_no: "",
+        note: payment.note || note || ""
+      });
+
+      fee.receipt_no = buildReceiptNumber(fee._id);
+      await fee.save();
+      createdFeeIds.push(fee._id);
+    }
+
+    const createdFees = await Fee.find({
+      _id: {
+        $in: createdFeeIds
+      }
+    }).populate(populateFee);
+
+    res.status(createdFees.length > 0 ? 201 : 400).json({
+      message:
+        `${createdFees.length} payment(s) recorded. ` +
+        `${errors.length} payment(s) skipped.`,
+      created: createdFees,
+      createdCount: createdFees.length,
+      skippedCount: errors.length,
+      errors
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      error: error.message
+    });
+  }
+};
+
 const updateFee = async (req, res) => {
   try {
     const fee = await Fee.findById(req.params.id);
@@ -621,6 +756,7 @@ module.exports = {
   getFees,
   getMyFees,
   createFee,
+  createBatchFees,
   updateFee,
   deleteFee
 };

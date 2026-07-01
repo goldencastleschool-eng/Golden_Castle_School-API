@@ -4,6 +4,9 @@ const { after, before, describe, it } = require("node:test");
 process.env.JWT_SECRET = process.env.JWT_SECRET || "test-secret";
 
 const app = require("../src/app");
+const {
+  getStudentEffectiveTermEnrollment
+} = require("../src/utils/studentTermEnrollment");
 
 describe("API health and platform checks", () => {
   let server;
@@ -53,5 +56,56 @@ describe("API health and platform checks", () => {
 
     assert.equal(response.status, 200);
     assert.equal(response.headers.get("access-control-allow-origin"), "http://localhost:5173");
+  });
+});
+
+describe("student fee term enrollment", () => {
+  it("treats a prior-term new admission as returning in later terms", () => {
+    const student = {
+      fee_enrollments: [
+        {
+          session: "2025/2026",
+          term: "Second Term",
+          fee_category: "new",
+          class: "Primary 2"
+        }
+      ]
+    };
+
+    const admissionTermEnrollment = getStudentEffectiveTermEnrollment(
+      student,
+      "2025/2026",
+      "Second Term"
+    );
+    const laterTermEnrollment = getStudentEffectiveTermEnrollment(
+      student,
+      "2025/2026",
+      "Third Term"
+    );
+
+    assert.equal(admissionTermEnrollment.fee_category, "new");
+    assert.equal(laterTermEnrollment.fee_category, "returning");
+    assert.equal(laterTermEnrollment.class, "Primary 2");
+  });
+
+  it("keeps non-admission fee categories active in later terms", () => {
+    const student = {
+      fee_enrollments: [
+        {
+          session: "2025/2026",
+          term: "First Term",
+          fee_category: "vip",
+          class: "Primary 4"
+        }
+      ]
+    };
+
+    const laterTermEnrollment = getStudentEffectiveTermEnrollment(
+      student,
+      "2025/2026",
+      "Third Term"
+    );
+
+    assert.equal(laterTermEnrollment.fee_category, "vip");
   });
 });

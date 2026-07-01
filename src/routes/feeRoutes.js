@@ -6,6 +6,7 @@ const {
   getFees,
   getMyFees,
   createFee,
+  createBatchFees,
   updateFee,
   deleteFee
 } = require("../controllers/feeController");
@@ -21,6 +22,8 @@ router.get("/", protect, authorizeRoles("admin"), getFees);
 router.get("/me", protect, authorizeRoles("student"), getMyFees);
 
 router.post("/", protect, authorizeRoles("admin"), createFee);
+
+router.post("/batch", protect, authorizeRoles("admin"), createBatchFees);
 
 router.put("/:id", protect, authorizeRoles("admin"), updateFee);
 
