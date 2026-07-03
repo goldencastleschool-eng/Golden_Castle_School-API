@@ -18,6 +18,9 @@ const {
   formatBusPaymentCategoryLabel,
   normalizeBusPaymentCategory
 } = require("../utils/busPaymentCategories");
+const {
+  getExpectedFeeSnapshot
+} = require("../utils/feeCalculation");
 
 const validTerms = ["First Term", "Second Term", "Third Term"];
 
@@ -150,6 +153,27 @@ const getStudentClassSnapshot = (student, enrollment, session) => {
 const getStructureKey = (classRecordId, feeCategory) =>
   `${classRecordId || "no-class"}|${feeCategory || "returning"}`;
 
+const getStructureForStudentFee = (
+  structuresByClassAndCategory,
+  classRecordId,
+  feeCategory = "returning"
+) => {
+  if (feeCategory === "discounted") {
+    return (
+      structuresByClassAndCategory.get(
+        getStructureKey(classRecordId, "returning")
+      ) ||
+      structuresByClassAndCategory.get(
+        getStructureKey(classRecordId, "discounted")
+      )
+    );
+  }
+
+  return structuresByClassAndCategory.get(
+    getStructureKey(classRecordId, feeCategory)
+  );
+};
+
 const buildStudentReportRows = ({
   students,
   classesById,
@@ -190,13 +214,22 @@ const buildStudentReportRows = ({
 
       const paid =
         feesByStudentId.get(`${getRecordId(student._id)}|${feeCategory}`) || 0;
-      const structure = structuresByClassAndCategory.get(
-        getStructureKey(classRecordId, feeCategory)
+      const structure = getStructureForStudentFee(
+        structuresByClassAndCategory,
+        classRecordId,
+        feeCategory
       );
-      const expected = feeCategory === "vip" ? 0 : Number(structure?.amount || 0);
+      const expectedSnapshot = getExpectedFeeSnapshot({
+        feeStructure: structure,
+        enrollment: {
+          ...enrollment,
+          fee_category: feeCategory
+        }
+      });
+      const expected = expectedSnapshot.expectedAmount;
       const balance = Math.max(expected - paid, 0);
       const paymentStatus =
-        feeCategory === "vip"
+        expectedSnapshot.isExempt
           ? "Exempt"
           : expected <= 0 && paid <= 0
             ? "No Structure"
@@ -216,6 +249,9 @@ const buildStudentReportRows = ({
         session,
         term,
         fee_category: feeCategory,
+        base_expected: expectedSnapshot.baseAmount,
+        discount_amount: expectedSnapshot.discountAmount,
+        discount_reason: expectedSnapshot.discountReason,
         expected,
         paid,
         balance,
@@ -789,7 +825,7 @@ const getExecutiveReportOverview = async (req, res) => {
         total_students: studentRows.length,
         newly_admitted: newlyAdmittedStudents.length,
         returning: returningStudents.length,
-        exempt: feeCategoryCounts.vip || 0,
+        exempt: (feeCategoryCounts.vip || 0) + (feeCategoryCounts.scholarship || 0),
         fee_category_counts: feeCategoryCounts,
         expected: sumRows(studentRows, "expected"),
         paid: sumRows(studentRows, "paid"),

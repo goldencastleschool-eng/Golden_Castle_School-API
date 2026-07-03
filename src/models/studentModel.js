@@ -85,6 +85,16 @@ const studentSchema = new mongoose.Schema(
           enum: VALID_FEE_CATEGORIES,
           default: "returning"
         },
+        discount_amount: {
+          type: Number,
+          min: 0,
+          default: 0
+        },
+        discount_reason: {
+          type: String,
+          trim: true,
+          default: ""
+        },
         class_record: {
           type: mongoose.Schema.Types.ObjectId,
           ref: "Class"

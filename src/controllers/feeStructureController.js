@@ -1,12 +1,17 @@
 const FeeStructure = require("../models/feeStructureModel");
 const Class = require("../models/classModel");
 const Fee = require("../models/feeModel");
+const Student = require("../models/studentModel");
 const { ensureFeeStructureIndexes } = require("../utils/feeStructureIndexes");
 const {
   VALID_FEE_CATEGORIES,
   formatFeeCategoryLabel,
   normalizeFeeCategory
 } = require("../utils/feeCategories");
+const { getExpectedFeeSnapshot } = require("../utils/feeCalculation");
+const {
+  getStudentEffectiveTermEnrollment
+} = require("../utils/studentTermEnrollment");
 
 const populateClass = {
   path: "class_record",
@@ -143,13 +148,25 @@ const findExistingFeeStructure = (validation, excludedId = "") => {
   return FeeStructure.findOne(query);
 };
 
+const getLinkedFeeCategoriesForStructure = (feeCategory = "returning") =>
+  feeCategory === "returning"
+    ? ["returning", "discounted"]
+    : [feeCategory || "returning"];
+
 const getRecordId = (record) => record?._id || record || "";
+
+const getRecordKey = (record) =>
+  record?._id?.toString?.() || record?.toString?.() || "";
 
 const buildFeeQueryForStructure = (feeStructure) => ({
   class_record: getRecordId(feeStructure.class_record),
   session: feeStructure.session,
   term: feeStructure.term,
-  fee_category: feeStructure.fee_category || "returning"
+  fee_category: {
+    $in: getLinkedFeeCategoriesForStructure(
+      feeStructure.fee_category || "returning"
+    )
+  }
 });
 
 const buildFeeQueryForValidation = (validation) => ({
@@ -157,6 +174,15 @@ const buildFeeQueryForValidation = (validation) => ({
   session: validation.session,
   term: validation.term,
   fee_category: validation.feeCategory
+});
+
+const buildLinkedFeeQueryForValidation = (validation) => ({
+  class_record: validation.classRecord._id,
+  session: validation.session,
+  term: validation.term,
+  fee_category: {
+    $in: getLinkedFeeCategoriesForStructure(validation.feeCategory)
+  }
 });
 
 const hasSameStructureKey = (feeStructure, validation) =>
@@ -167,31 +193,56 @@ const hasSameStructureKey = (feeStructure, validation) =>
   (feeStructure.fee_category || "returning") === validation.feeCategory;
 
 const findOverpaidStudentForStructure = async (feeQuery, expectedAmount) => {
-  const [overpaidStudent] = await Fee.aggregate([
+  const groupedPayments = await Fee.aggregate([
     {
       $match: feeQuery
     },
     {
       $group: {
-        _id: "$student",
+        _id: {
+          student: "$student",
+          fee_category: "$fee_category"
+        },
         paid: {
           $sum: "$amount"
         }
       }
     },
-    {
-      $match: {
-        paid: {
-          $gt: expectedAmount
-        }
-      }
-    },
-    {
-      $limit: 1
-    }
   ]);
 
-  return overpaidStudent;
+  if (groupedPayments.length === 0) {
+    return null;
+  }
+
+  const students = await Student.find({
+    _id: {
+      $in: groupedPayments.map((payment) => payment._id.student)
+    }
+  }).select("fee_enrollments");
+  const studentsById = new Map(
+    students.map((student) => [getRecordKey(student._id), student])
+  );
+
+  return groupedPayments.find((payment) => {
+    const student = studentsById.get(getRecordKey(payment._id.student));
+    const enrollment = getStudentEffectiveTermEnrollment(
+      student,
+      feeQuery.session,
+      feeQuery.term
+    );
+    const expectedSnapshot = getExpectedFeeSnapshot({
+      feeStructure: {
+        amount: expectedAmount
+      },
+      enrollment: {
+        ...enrollment,
+        fee_category:
+          payment._id.fee_category || enrollment?.fee_category || "returning"
+      }
+    });
+
+    return payment.paid > expectedSnapshot.expectedAmount;
+  }) || null;
 };
 
 const validateStructureUpdateAgainstFees = async (feeStructure, validation) => {
@@ -234,16 +285,50 @@ const validateStructureUpdateAgainstFees = async (feeStructure, validation) => {
   };
 };
 
-const syncRecordedFeesToStructure = (feeQuery, validation) =>
-  Fee.updateMany(
-    feeQuery,
-    {
-      $set: {
-        expected_amount_at_payment: validation.amount,
-        expected_items_at_payment: validation.items
-      }
+const syncRecordedFeesToStructure = async (feeQuery, validation) => {
+  const fees = await Fee.find(feeQuery).select("student fee_category");
+  const students = await Student.find({
+    _id: {
+      $in: fees.map((fee) => fee.student)
     }
+  }).select("fee_enrollments");
+  const studentsById = new Map(
+    students.map((student) => [getRecordKey(student._id), student])
   );
+
+  for (const fee of fees) {
+    const student = studentsById.get(getRecordKey(fee.student));
+    const enrollment = getStudentEffectiveTermEnrollment(
+      student,
+      validation.session,
+      validation.term
+    );
+    const expectedSnapshot = getExpectedFeeSnapshot({
+      feeStructure: {
+        amount: validation.amount
+      },
+      enrollment: {
+        ...enrollment,
+        fee_category: fee.fee_category || enrollment?.fee_category || "returning"
+      }
+    });
+
+    await Fee.updateOne(
+      {
+        _id: fee._id
+      },
+      {
+        $set: {
+          expected_amount_at_payment: expectedSnapshot.expectedAmount,
+          base_expected_amount_at_payment: expectedSnapshot.baseAmount,
+          discount_amount_at_payment: expectedSnapshot.discountAmount,
+          discount_reason_at_payment: expectedSnapshot.discountReason,
+          expected_items_at_payment: validation.items
+        }
+      }
+    );
+  }
+};
 
 const resolveDuplicateFeeStructureMessage = async (validation, error) => {
   if (!validation?.classRecord) {
@@ -320,6 +405,12 @@ const createFeeStructure = async (req, res) => {
       items: validation.items,
       amount: validation.amount
     });
+    const linkedFeeQuery = buildLinkedFeeQueryForValidation(validation);
+    const linkedFeeCount = await Fee.countDocuments(linkedFeeQuery);
+
+    if (linkedFeeCount > 0) {
+      await syncRecordedFeesToStructure(linkedFeeQuery, validation);
+    }
 
     const populatedFeeStructure = await FeeStructure.findById(feeStructure._id)
       .populate(populateClass);
@@ -407,8 +498,10 @@ const upsertBothFeeStructures = async (req, res) => {
             validation
           )
         : {
-            feeQuery: buildFeeQueryForValidation(validation),
-            recordedFeeCount: 0
+            feeQuery: buildLinkedFeeQueryForValidation(validation),
+            recordedFeeCount: await Fee.countDocuments(
+              buildLinkedFeeQueryForValidation(validation)
+            )
           };
 
       if (linkedFeeResult.message) {

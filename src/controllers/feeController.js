@@ -5,6 +5,8 @@ const {
   applyListQueryOptions,
   getListQueryOptions
 } = require("../utils/listQueryOptions");
+const { isFeeExemptCategory } = require("../utils/feeCategories");
+const { getExpectedFeeSnapshot } = require("../utils/feeCalculation");
 
 const populateStudent = {
   path: "student",
@@ -94,6 +96,35 @@ const getRecordId = (record) => record?._id || record || "";
 const getFeeCategoryForStudentTerm = (student, session, term) =>
   getStudentEffectiveFeeEnrollment(student, session, term)?.fee_category ||
   "returning";
+
+const getStructureCategoriesForFeeCategory = (feeCategory = "returning") =>
+  feeCategory === "discounted"
+    ? ["returning", "discounted"]
+    : [feeCategory || "returning"];
+
+const findFeeStructureForStudentFee = async ({
+  classRecordId,
+  session,
+  term,
+  feeCategory
+}) => {
+  const feeCategories = getStructureCategoriesForFeeCategory(feeCategory);
+
+  for (const structureCategory of feeCategories) {
+    const feeStructure = await FeeStructure.findOne({
+      class_record: classRecordId,
+      session,
+      term,
+      fee_category: structureCategory
+    });
+
+    if (feeStructure) {
+      return feeStructure;
+    }
+  }
+
+  return null;
+};
 
 const buildStudentFeeKey = ({ session, term, feeCategory }) =>
   [session, term, feeCategory].join("|");
@@ -200,17 +231,17 @@ const buildFeeSnapshot = async (payload, excludedFeeId = "") => {
     };
   }
 
-  if (feeCategory === "vip") {
+  if (isFeeExemptCategory(feeCategory)) {
     return {
-      message: "VIP students are fee-exempt and do not require payment records"
+      message: "This student is fee-exempt and does not require payment records"
     };
   }
 
-  const feeStructure = await FeeStructure.findOne({
-    class_record: classRecordId,
+  const feeStructure = await findFeeStructureForStudentFee({
+    classRecordId,
     session,
     term,
-    fee_category: feeCategory
+    feeCategory
   });
 
   if (!feeStructure) {
@@ -227,7 +258,14 @@ const buildFeeSnapshot = async (payload, excludedFeeId = "") => {
     feeCategory,
     excludedFeeId
   });
-  const expectedAmount = Number(feeStructure.amount || 0);
+  const expectedSnapshot = getExpectedFeeSnapshot({
+    feeStructure,
+    enrollment: {
+      ...enrollment,
+      fee_category: feeCategory
+    }
+  });
+  const expectedAmount = expectedSnapshot.expectedAmount;
   const remainingBalance = Math.max(expectedAmount - alreadyPaid, 0);
 
   if (numericAmount > remainingBalance) {
@@ -242,6 +280,7 @@ const buildFeeSnapshot = async (payload, excludedFeeId = "") => {
     selectedStudent,
     feeCategory,
     feeStructure,
+    expectedSnapshot,
     classRecordId,
     className:
       enrollment?.class ||
@@ -417,12 +456,17 @@ const getMyFees = async (req, res) => {
 
     const summaries = await Promise.all(
       Array.from(summaryMap.values()).map(async (seed) => {
+        const enrollment = getStudentEffectiveFeeEnrollment(
+          student,
+          seed.session,
+          seed.term
+        );
         const feeStructure = seed.class_record
-          ? await FeeStructure.findOne({
-              class_record: seed.class_record,
+          ? await findFeeStructureForStudentFee({
+              classRecordId: seed.class_record,
               session: seed.session,
               term: seed.term,
-              fee_category: seed.fee_category
+              feeCategory: seed.fee_category
             })
           : null;
         const payments = studentPayments.filter(
@@ -435,17 +479,20 @@ const getMyFees = async (req, res) => {
           (sum, fee) => sum + Number(fee.amount || 0),
           0
         );
-        const isVipStudentFee = seed.fee_category === "vip";
-        const expectedAmount = isVipStudentFee
-          ? 0
-          : Number(
-              feeStructure?.amount ||
-                payments[0]?.expected_amount_at_payment ||
-                0
-            );
+        const expectedSnapshot = getExpectedFeeSnapshot({
+          feeStructure,
+          enrollment: {
+            ...enrollment,
+            fee_category: seed.fee_category
+          }
+        });
+        const isExemptStudentFee = expectedSnapshot.isExempt;
+        const expectedAmount = feeStructure || isExemptStudentFee
+          ? expectedSnapshot.expectedAmount
+          : Number(payments[0]?.expected_amount_at_payment || 0);
         const balance = Math.max(expectedAmount - totalPaid, 0);
         const status =
-          isVipStudentFee
+          isExemptStudentFee
             ? "Exempt"
             : expectedAmount <= 0 && totalPaid <= 0
               ? "No Structure"
@@ -462,6 +509,9 @@ const getMyFees = async (req, res) => {
           class: seed.class || getStudentFeeClassName(student, seed.session, seed.term),
           fee_category: seed.fee_category,
           expected_amount: expectedAmount,
+          base_expected_amount: expectedSnapshot.baseAmount,
+          discount_amount: expectedSnapshot.discountAmount,
+          discount_reason: expectedSnapshot.discountReason,
           expected_items:
             feeStructure?.items ||
             payments[0]?.expected_items_at_payment ||
@@ -479,6 +529,14 @@ const getMyFees = async (req, res) => {
             fee_category: fee.fee_category,
             expected_amount_at_payment:
               fee.expected_amount_at_payment || expectedAmount,
+            base_expected_amount_at_payment:
+              fee.base_expected_amount_at_payment ||
+              expectedSnapshot.baseAmount ||
+              expectedAmount,
+            discount_amount_at_payment:
+              fee.discount_amount_at_payment || expectedSnapshot.discountAmount,
+            discount_reason_at_payment:
+              fee.discount_reason_at_payment || expectedSnapshot.discountReason,
             expected_items_at_payment:
               fee.expected_items_at_payment ||
               feeStructure?.items ||
@@ -544,7 +602,10 @@ const createFee = async (req, res) => {
       session: req.body.session,
       term: req.body.term,
       fee_category: snapshot.feeCategory,
-      expected_amount_at_payment: snapshot.feeStructure.amount,
+      expected_amount_at_payment: snapshot.expectedSnapshot.expectedAmount,
+      base_expected_amount_at_payment: snapshot.expectedSnapshot.baseAmount,
+      discount_amount_at_payment: snapshot.expectedSnapshot.discountAmount,
+      discount_reason_at_payment: snapshot.expectedSnapshot.discountReason,
       expected_items_at_payment: snapshot.feeStructure.items || [],
       amount: snapshot.amount,
       payment_date: new Date(req.body.payment_date),
@@ -647,7 +708,10 @@ const createBatchFees = async (req, res) => {
         session,
         term,
         fee_category: snapshot.feeCategory,
-        expected_amount_at_payment: snapshot.feeStructure.amount,
+        expected_amount_at_payment: snapshot.expectedSnapshot.expectedAmount,
+        base_expected_amount_at_payment: snapshot.expectedSnapshot.baseAmount,
+        discount_amount_at_payment: snapshot.expectedSnapshot.discountAmount,
+        discount_reason_at_payment: snapshot.expectedSnapshot.discountReason,
         expected_items_at_payment: snapshot.feeStructure.items || [],
         amount: snapshot.amount,
         payment_date: new Date(payment_date),
@@ -708,7 +772,10 @@ const updateFee = async (req, res) => {
     fee.session = req.body.session;
     fee.term = req.body.term;
     fee.fee_category = snapshot.feeCategory;
-    fee.expected_amount_at_payment = snapshot.feeStructure.amount;
+    fee.expected_amount_at_payment = snapshot.expectedSnapshot.expectedAmount;
+    fee.base_expected_amount_at_payment = snapshot.expectedSnapshot.baseAmount;
+    fee.discount_amount_at_payment = snapshot.expectedSnapshot.discountAmount;
+    fee.discount_reason_at_payment = snapshot.expectedSnapshot.discountReason;
     fee.expected_items_at_payment = snapshot.feeStructure.items || [];
     fee.amount = snapshot.amount;
     fee.payment_date = new Date(req.body.payment_date);

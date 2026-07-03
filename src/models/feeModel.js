@@ -44,6 +44,24 @@ const feeSchema = new mongoose.Schema(
       min: 0
     },
 
+    base_expected_amount_at_payment: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+
+    discount_amount_at_payment: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+
+    discount_reason_at_payment: {
+      type: String,
+      trim: true,
+      default: ""
+    },
+
     expected_items_at_payment: [
       {
         name: {

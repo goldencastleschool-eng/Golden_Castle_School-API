@@ -20,8 +20,10 @@ const {
 const {
   VALID_FEE_CATEGORIES,
   formatFeeCategoryLabel,
+  isFeeExemptCategory,
   normalizeFeeCategory
 } = require("../utils/feeCategories");
+const { normalizeDiscountAmount } = require("../utils/feeCalculation");
 const { isFormTeacher } = require("../utils/teacherAssignments");
 
 const sanitizeStudent = (student) => {
@@ -136,9 +138,14 @@ const upsertFeeEnrollment = (student, {
   session,
   term,
   feeCategory,
-  classRecord
+  classRecord,
+  discountAmount = 0,
+  discountReason = ""
 }) => {
   const normalizedCategory = normalizeFeeCategory(feeCategory);
+  const normalizedDiscountAmount = normalizedCategory === "discounted"
+    ? normalizeDiscountAmount(discountAmount)
+    : 0;
 
   if (!session || !term || !normalizedCategory) {
     return "Session, term, and student fee category are required";
@@ -152,6 +159,13 @@ const upsertFeeEnrollment = (student, {
     return `Student fee category must be one of: ${validFeeCategoryLabels}`;
   }
 
+  if (
+    normalizedCategory === "discounted" &&
+    normalizedDiscountAmount <= 0
+  ) {
+    return "Discounted students must have a discount amount greater than 0";
+  }
+
   const existingEnrollment = student.fee_enrollments.find(
     (enrollment) =>
       enrollment.session === session &&
@@ -162,6 +176,12 @@ const upsertFeeEnrollment = (student, {
     session,
     term,
     fee_category: normalizedCategory,
+    discount_amount: isFeeExemptCategory(normalizedCategory)
+      ? 0
+      : normalizedDiscountAmount,
+    discount_reason: normalizedCategory === "discounted"
+      ? discountReason?.toString().trim() || ""
+      : "",
     class_record: classRecord._id,
     class: classRecord.name
   };
@@ -198,6 +218,8 @@ const registerStudent = async (req, res) => {
       current_session,
       admission_term,
       fee_category,
+      discount_amount,
+      discount_reason,
       gender,
       password
     } = req.body;
@@ -252,7 +274,9 @@ const registerStudent = async (req, res) => {
       session: selectedClass.session,
       term: admission_term,
       feeCategory: fee_category,
-      classRecord: selectedClass
+      classRecord: selectedClass,
+      discountAmount: discount_amount,
+      discountReason: discount_reason
     });
 
     if (enrollmentError) {
@@ -320,6 +344,8 @@ const updateStudent = async (req, res) => {
       current_session,
       admission_term,
       fee_category,
+      discount_amount,
+      discount_reason,
       gender,
       password
     } = req.body;
@@ -381,7 +407,9 @@ const updateStudent = async (req, res) => {
         classRecord: selectedClass || {
           _id: student.class_record,
           name: student.class
-        }
+        },
+        discountAmount: discount_amount,
+        discountReason: discount_reason
       });
 
       if (enrollmentError) {
@@ -678,6 +706,8 @@ const promoteStudentsByClass = async (req, res) => {
               session: targetClass.session,
               term: targetFeeTerm,
               fee_category: "returning",
+              discount_amount: 0,
+              discount_reason: "",
               class_record: targetClass._id,
               class: targetClass.name
             }

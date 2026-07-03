@@ -7,6 +7,12 @@ const app = require("../src/app");
 const {
   getStudentEffectiveTermEnrollment
 } = require("../src/utils/studentTermEnrollment");
+const {
+  isFeeExemptCategory
+} = require("../src/utils/feeCategories");
+const {
+  getExpectedFeeSnapshot
+} = require("../src/utils/feeCalculation");
 
 describe("API health and platform checks", () => {
   let server;
@@ -107,5 +113,52 @@ describe("student fee term enrollment", () => {
     );
 
     assert.equal(laterTermEnrollment.fee_category, "vip");
+  });
+});
+
+describe("student fee calculation", () => {
+  it("treats scholarship and vip categories as fee-exempt", () => {
+    assert.equal(isFeeExemptCategory("vip"), true);
+    assert.equal(isFeeExemptCategory("scholarship"), true);
+    assert.equal(isFeeExemptCategory("discounted"), false);
+  });
+
+  it("applies student-specific discounts to the base class fee", () => {
+    const feeStructure = {
+      amount: 46000
+    };
+
+    const studentA = getExpectedFeeSnapshot({
+      feeStructure,
+      enrollment: {
+        fee_category: "discounted",
+        discount_amount: 10000
+      }
+    });
+    const studentB = getExpectedFeeSnapshot({
+      feeStructure,
+      enrollment: {
+        fee_category: "discounted",
+        discount_amount: 30000
+      }
+    });
+
+    assert.equal(studentA.expectedAmount, 36000);
+    assert.equal(studentB.expectedAmount, 16000);
+  });
+
+  it("caps discounts at the class fee amount", () => {
+    const snapshot = getExpectedFeeSnapshot({
+      feeStructure: {
+        amount: 46000
+      },
+      enrollment: {
+        fee_category: "discounted",
+        discount_amount: 80000
+      }
+    });
+
+    assert.equal(snapshot.expectedAmount, 0);
+    assert.equal(snapshot.discountAmount, 46000);
   });
 });
