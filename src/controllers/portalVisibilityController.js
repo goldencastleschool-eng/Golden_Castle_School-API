@@ -1,6 +1,7 @@
 const Class = require("../models/classModel");
 const ClassBroadsheet = require("../models/classBroadsheetModel");
 const ClassResult = require("../models/classResultModel");
+const CumulativeResult = require("../models/cumulativeResultModel");
 const Fee = require("../models/feeModel");
 const Result = require("../models/resultModel");
 const ResultAccess = require("../models/resultAccessModel");
@@ -13,6 +14,7 @@ const {
 const { isFormTeacher } = require("../utils/teacherAssignments");
 
 const ACCESS_KEY = "active-result-access";
+const CUMULATIVE_TERM_LABEL = "Third Term";
 
 const pdfRecordQuery = {
   $or: [
@@ -760,13 +762,15 @@ const buildTeacherPdfCheck = ({
   feature,
   accessSession,
   accessTerm,
+  termRequired = true,
+  displayTerm = accessTerm,
   activeFormTeachers,
   records,
   addIssue,
   buildCheck
 }) => {
   const issues = [];
-  const configured = Boolean(accessSession && accessTerm);
+  const configured = Boolean(accessSession && (!termRequired || accessTerm));
   const expectedTeachers = configured
     ? activeFormTeachers.filter(
         (teacher) =>
@@ -778,7 +782,7 @@ const buildTeacherPdfCheck = ({
     ? records.filter(
         (record) =>
           record.session === accessSession &&
-          record.term === accessTerm
+          (!termRequired || record.term === accessTerm)
       )
     : [];
   const visibleRecordKeys = new Set();
@@ -833,7 +837,7 @@ const buildTeacherPdfCheck = ({
         id: `${key}-${teacherId}-${classRecordId}`,
         className: formatClassName(classRecord),
         session: configured ? accessSession : teacher.session || "",
-        term: configured ? accessTerm : "",
+        term: configured ? displayTerm || "" : "",
         status: rowStatus,
         expectedLabel: "Teachers",
         expectedCount: 1,
@@ -859,7 +863,7 @@ const buildTeacherPdfCheck = ({
             ? record.class.toString().toUpperCase()
             : "Class not set",
           session: record.session || accessSession || "",
-          term: record.term || accessTerm || "",
+          term: record.term || displayTerm || accessTerm || "",
           status: "attention",
           expectedLabel: "Teachers",
           expectedCount: 0,
@@ -878,7 +882,9 @@ const buildTeacherPdfCheck = ({
       feature,
       severity: "critical",
       message: `${label} access is not configured.`,
-      action: "Open Result Upload and set the active teacher access session and term."
+      action: termRequired
+        ? "Open Result Upload and set the active teacher access session and term."
+        : "Open Result Upload and set the active teacher access session."
     });
   } else if (expectedTeachers.length === 0) {
     addIssue({
@@ -889,11 +895,15 @@ const buildTeacherPdfCheck = ({
       action: "Confirm form teacher assignments for the active session."
     });
   } else if (missingTeachers.length > 0) {
+    const windowLabel = [accessSession, displayTerm || accessTerm]
+      .filter(Boolean)
+      .join(" ");
+
     addIssue({
       issues,
       feature,
       severity: "warning",
-      message: `${missingTeachers.length} active form teacher(s) are missing ${label.toLowerCase()} uploads for ${accessSession} ${accessTerm}.`,
+      message: `${missingTeachers.length} active form teacher(s) are missing ${label.toLowerCase()} uploads for ${windowLabel}.`,
       action: `Upload the missing ${label.toLowerCase()} PDFs for the active teacher access window.`,
       meta: {
         missing_count: missingTeachers.length
@@ -928,7 +938,7 @@ const buildTeacherPdfCheck = ({
     status,
     access: {
       session: accessSession || "",
-      term: accessTerm || ""
+      term: displayTerm || accessTerm || ""
     },
     metrics: [
       buildMetric("Expected Teachers", expectedTeachers.length),
@@ -962,6 +972,7 @@ const getAdminPortalVisibility = async (req, res) => {
       classes,
       results,
       fees,
+      cumulativeResults,
       broadsheets,
       classResults
     ] = await Promise.all([
@@ -980,6 +991,7 @@ const getAdminPortalVisibility = async (req, res) => {
         .select("-expected_items_at_payment")
         .populate("student", "full_name admission_no class current_session status")
         .lean(),
+      CumulativeResult.find(pdfRecordQuery).select("-pdf_data").lean(),
       ClassBroadsheet.find(pdfRecordQuery).select("-pdf_data").lean(),
       ClassResult.find(pdfRecordQuery).select("-pdf_data").lean()
     ]);
@@ -998,6 +1010,8 @@ const getAdminPortalVisibility = async (req, res) => {
         auditSession || sourceAccessRecord.broadsheet_session,
       broadsheet_term:
         auditTerm || sourceAccessRecord.broadsheet_term,
+      cumulative_session:
+        auditSession || sourceAccessRecord.cumulative_session,
       class_result_session:
         auditSession || sourceAccessRecord.class_result_session,
       class_result_term:
@@ -1046,6 +1060,20 @@ const getAdminPortalVisibility = async (req, res) => {
         buildCheck
       }),
       buildTeacherPdfCheck({
+        key: "teacher_cumulative_results",
+        label: "Cumulative Results",
+        description: "Third Term cumulative result PDFs visible to assigned form teachers.",
+        feature: "Teacher cumulative results",
+        accessSession: accessRecord.cumulative_session,
+        accessTerm: "",
+        termRequired: false,
+        displayTerm: CUMULATIVE_TERM_LABEL,
+        activeFormTeachers,
+        records: cumulativeResults,
+        addIssue,
+        buildCheck
+      }),
+      buildTeacherPdfCheck({
         key: "teacher_class_results",
         label: "Class Results",
         description: "Class result PDFs visible to assigned form teachers.",
@@ -1086,6 +1114,10 @@ const getAdminPortalVisibility = async (req, res) => {
         teacher_broadsheets: {
           session: accessRecord.broadsheet_session || "",
           term: accessRecord.broadsheet_term || ""
+        },
+        teacher_cumulative_results: {
+          session: accessRecord.cumulative_session || "",
+          term: CUMULATIVE_TERM_LABEL
         },
         teacher_class_results: {
           session: accessRecord.class_result_session || "",

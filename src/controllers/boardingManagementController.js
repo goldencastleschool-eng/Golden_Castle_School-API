@@ -8,6 +8,7 @@ const {
   applyListQueryOptions,
   getListQueryOptions
 } = require("../utils/listQueryOptions");
+const { isSecondaryClass } = require("../utils/classSections");
 const {
   studentBelongsToTermClass
 } = require("../utils/studentTermEnrollment");
@@ -339,9 +340,13 @@ const createEnrollments = async (req, res) => {
     const term = req.body.term;
     const classRecordId = req.body.class_record;
     const house = req.body.house;
-    const studentIds = Array.isArray(req.body.student_ids)
-      ? req.body.student_ids
-      : [];
+    const studentIds = Array.from(
+      new Set(
+        (Array.isArray(req.body.student_ids) ? req.body.student_ids : [])
+          .map((studentId) => normalizeText(studentId))
+          .filter(Boolean)
+      )
+    );
 
     if (!session || !validTerms.includes(term) || !classRecordId || !house) {
       return res.status(400).json({
@@ -357,6 +362,12 @@ const createEnrollments = async (req, res) => {
 
     if (!classRecord) {
       return res.status(404).json({ message: "Class record not found" });
+    }
+
+    if (!isSecondaryClass(classRecord)) {
+      return res.status(400).json({
+        message: "Only secondary classes are allowed for boarding registration"
+      });
     }
 
     const students = await Student.find({ _id: { $in: studentIds } });

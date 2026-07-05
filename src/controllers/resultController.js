@@ -194,6 +194,18 @@ const uploadResult = async (req, res) => {
 
     const resultClass = studentClass || selectedClass.name;
 
+    const existingResult = await Result.findOne({
+      student: student._id,
+      session,
+      term
+    });
+
+    if (existingResult) {
+      return res.status(409).json({
+        message: "A result PDF already exists for this student, session, and term"
+      });
+    }
+
     const fileName = createSafeFileName(
       student.full_name,
       term,
@@ -239,6 +251,166 @@ const uploadResult = async (req, res) => {
   } catch (error) {
 
     res.status(500).json({
+      error: error.message
+    });
+  }
+};
+
+const uploadBulkResults = async (req, res) => {
+  try {
+    const {
+      session,
+      term,
+      class_record,
+      class: studentClass
+    } = req.body;
+    const files = req.files || [];
+    const entries = JSON.parse(req.body.entries || "[]");
+
+    if (!session || !term || !class_record) {
+      return res.status(400).json({
+        message: "Session, term, and class are required"
+      });
+    }
+
+    if (!files.length || !entries.length) {
+      return res.status(400).json({
+        message: "At least one PDF file is required"
+      });
+    }
+
+    if (files.length !== entries.length) {
+      return res.status(400).json({
+        message: "Every bulk result entry must have one PDF file"
+      });
+    }
+
+    const selectedClass = await Class.findById(class_record);
+
+    if (!selectedClass) {
+      return res.status(400).json({
+        message: "Class record is required"
+      });
+    }
+
+    const results = [];
+    const seenStudents = new Set();
+
+    for (let index = 0; index < entries.length; index += 1) {
+      const entry = entries[index] || {};
+      const file = files[index];
+      const label = entry.studentName || file?.originalname || `File ${index + 1}`;
+      let pdfUpload = null;
+
+      try {
+        if (!entry.studentId) {
+          throw new Error("Student is required");
+        }
+
+        const duplicateKey = `${entry.studentId}-${session}-${term}`;
+
+        if (seenStudents.has(duplicateKey)) {
+          throw new Error("This student appears more than once in the bulk upload");
+        }
+
+        seenStudents.add(duplicateKey);
+
+        if (!file || !isPdfBuffer(file.buffer)) {
+          throw new Error("Invalid PDF file");
+        }
+
+        const student = await Student.findById(entry.studentId).populate(
+          "fee_enrollments.class_record"
+        );
+
+        if (!student) {
+          throw new Error("Student not found");
+        }
+
+        if (
+          !studentBelongsToTermClass({
+            student,
+            classRecord: selectedClass,
+            session,
+            term
+          })
+        ) {
+          throw new Error(
+            "Student is not enrolled in this class for the selected session and term"
+          );
+        }
+
+        const resultClass = studentClass || selectedClass.name;
+        const existingResult = await Result.findOne({
+          student: student._id,
+          session,
+          term
+        });
+
+        if (existingResult) {
+          throw new Error(
+            "A result PDF already exists for this student, session, and term"
+          );
+        }
+
+        const fileName = createSafeFileName(student.full_name, term, session);
+        pdfUpload = await uploadPdfBuffer(file.buffer, {
+          fileName,
+          contentType: file.mimetype,
+          metadata: {
+            type: "termly-result",
+            student: student._id.toString(),
+            session,
+            term,
+            class: resultClass,
+            class_record
+          }
+        });
+
+        const result = await Result.create({
+          student: student._id,
+          session,
+          term,
+          class: resultClass,
+          ...getPdfStorageFields(pdfUpload, {
+            contentType: file.mimetype,
+            fileName
+          })
+        });
+
+        results.push({
+          ok: true,
+          label,
+          result: {
+            ...result.toObject(),
+            pdf_data: undefined
+          }
+        });
+      } catch (error) {
+        await deletePdfFile(pdfUpload);
+        results.push({
+          ok: false,
+          label,
+          message: error.message
+        });
+      }
+    }
+
+    const uploadedCount = results.filter((result) => result.ok).length;
+
+    res.status(uploadedCount === entries.length ? 201 : 207).json({
+      uploadedCount,
+      failedCount: entries.length - uploadedCount,
+      results
+    });
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      return res.status(400).json({
+        message: "Bulk result entries must be valid JSON"
+      });
+    }
+
+    return res.status(500).json({
       error: error.message
     });
   }
@@ -494,6 +666,7 @@ const downloadResult = (req, res) => sendResultPdf(req, res, "attachment");
 
 module.exports = {
   uploadResult,
+  uploadBulkResults,
   getAllResults,
   getResultCount,
   getStudentResults,

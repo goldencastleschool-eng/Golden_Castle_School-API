@@ -26,6 +26,8 @@ const isPdfBuffer = (buffer) => {
   return Buffer.isBuffer(buffer) && buffer.subarray(0, 4).toString() === "%PDF";
 };
 
+const isDuplicateKeyError = (error) => error?.code === 11000;
+
 const pdfRecordQuery = {
   $or: [
     { pdf_file_id: { $exists: true, $nin: [null, ""] } },
@@ -50,6 +52,12 @@ const getClassResults = async (req, res) => {
 
     res.json(classResults);
   } catch (error) {
+    if (isDuplicateKeyError(error)) {
+      return res.status(409).json({
+        message: "A class result PDF already exists for this class, session, and term"
+      });
+    }
+
     res.status(500).json({ error: error.message });
   }
 };
@@ -115,6 +123,12 @@ const uploadClassResult = async (req, res) => {
       assigned_teacher: selectedTeacher._id
     });
 
+    if (existingClassResult) {
+      return res.status(409).json({
+        message: "A class result PDF already exists for this class, session, and term"
+      });
+    }
+
     const pdfUpload = await uploadPdfBuffer(req.file.buffer, {
       fileName,
       contentType: req.file.mimetype,
@@ -131,46 +145,176 @@ const uploadClassResult = async (req, res) => {
     let classResult;
 
     try {
-      classResult = await ClassResult.findOneAndUpdate(
-        {
-          session,
-          term,
-          class_record: selectedClass._id,
-          assigned_teacher: selectedTeacher._id
-        },
-        {
-          $set: {
-            session,
-            term,
-            class: selectedClass.name,
-            class_record: selectedClass._id,
-            assigned_teacher: selectedTeacher._id,
-            ...getPdfStorageFields(pdfUpload, {
-              contentType: req.file.mimetype,
-              fileName
-            })
-          },
-          $unset: {
-            pdf_data: "",
-            legacy_pdf_file_id: ""
-          }
-        },
-        {
-          new: true,
-          upsert: true,
-          setDefaultsOnInsert: true
-        }
-      ).select("-pdf_data");
+      classResult = await ClassResult.create({
+        session,
+        term,
+        class: selectedClass.name,
+        class_record: selectedClass._id,
+        assigned_teacher: selectedTeacher._id,
+        ...getPdfStorageFields(pdfUpload, {
+          contentType: req.file.mimetype,
+          fileName
+        })
+      });
     } catch (error) {
       await deletePdfFile(pdfUpload);
       throw error;
     }
 
-    await deletePdfFile(existingClassResult);
-
     res.status(201).json(classResult);
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+};
+
+const uploadBulkClassResults = async (req, res) => {
+  try {
+    const { session, term } = req.body;
+    const files = req.files || [];
+    const entries = JSON.parse(req.body.entries || "[]");
+
+    if (!session || !term) {
+      return res.status(400).json({
+        message: "Session and term are required"
+      });
+    }
+
+    if (!files.length || !entries.length) {
+      return res.status(400).json({
+        message: "At least one PDF file is required"
+      });
+    }
+
+    if (files.length !== entries.length) {
+      return res.status(400).json({
+        message: "Every bulk class result entry must have one PDF file"
+      });
+    }
+
+    const results = [];
+    const seenClasses = new Set();
+
+    for (let index = 0; index < entries.length; index += 1) {
+      const entry = entries[index] || {};
+      const file = files[index];
+      const label = entry.className || file?.originalname || `File ${index + 1}`;
+      let pdfUpload = null;
+
+      try {
+        if (!entry.class_record || !entry.assigned_teacher) {
+          throw new Error("Class and form teacher are required");
+        }
+
+        const duplicateKey = `${entry.class_record}-${entry.assigned_teacher}-${session}-${term}`;
+
+        if (seenClasses.has(duplicateKey)) {
+          throw new Error("This class appears more than once in the bulk upload");
+        }
+
+        seenClasses.add(duplicateKey);
+
+        if (!file || !isPdfBuffer(file.buffer)) {
+          throw new Error("Invalid PDF file");
+        }
+
+        const selectedClass = await Class.findById(entry.class_record);
+
+        if (!selectedClass || selectedClass.session !== session) {
+          throw new Error("Selected class must belong to the selected session");
+        }
+
+        const selectedTeacher = await Teacher.findById(entry.assigned_teacher);
+        const teacherClassId = selectedTeacher?.assigned_class_record?.toString();
+
+        if (
+          !selectedTeacher ||
+          selectedTeacher.status === "inactive" ||
+          !isFormTeacher(selectedTeacher) ||
+          selectedTeacher.session !== session ||
+          !teacherClassId ||
+          teacherClassId !== selectedClass._id.toString()
+        ) {
+          throw new Error("Selected form teacher must be assigned to this class/session");
+        }
+
+        const fileName = createSafeFileName(
+          selectedTeacher.full_name,
+          selectedClass.name,
+          term,
+          session
+        );
+        const existingClassResult = await ClassResult.findOne({
+          session,
+          term,
+          class_record: selectedClass._id,
+          assigned_teacher: selectedTeacher._id
+        });
+
+        if (existingClassResult) {
+          throw new Error(
+            "A class result PDF already exists for this class, session, and term"
+          );
+        }
+
+        pdfUpload = await uploadPdfBuffer(file.buffer, {
+          fileName,
+          contentType: file.mimetype,
+          metadata: {
+            type: "class-result",
+            session,
+            term,
+            class: selectedClass.name,
+            class_record: selectedClass._id.toString(),
+            assigned_teacher: selectedTeacher._id.toString()
+          }
+        });
+
+        const classResult = await ClassResult.create({
+          session,
+          term,
+          class: selectedClass.name,
+          class_record: selectedClass._id,
+          assigned_teacher: selectedTeacher._id,
+          ...getPdfStorageFields(pdfUpload, {
+            contentType: file.mimetype,
+            fileName
+          })
+        });
+
+        results.push({
+          ok: true,
+          label,
+          result: classResult
+        });
+      } catch (error) {
+        await deletePdfFile(pdfUpload);
+        results.push({
+          ok: false,
+          label,
+          message: isDuplicateKeyError(error)
+            ? "A class result PDF already exists for this class, session, and term"
+            : error.message
+        });
+      }
+    }
+
+    const uploadedCount = results.filter((result) => result.ok).length;
+
+    res.status(uploadedCount === entries.length ? 201 : 207).json({
+      uploadedCount,
+      failedCount: entries.length - uploadedCount,
+      results
+    });
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      return res.status(400).json({
+        message: "Bulk class result entries must be valid JSON"
+      });
+    }
+
+    return res.status(500).json({
+      error: error.message
+    });
   }
 };
 
@@ -323,6 +467,7 @@ const downloadClassResult = (req, res) =>
 module.exports = {
   getClassResults,
   uploadClassResult,
+  uploadBulkClassResults,
   deleteClassResult,
   getApprovedTeacherClassResults,
   viewClassResult,

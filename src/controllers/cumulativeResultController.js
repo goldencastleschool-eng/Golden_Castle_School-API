@@ -1,4 +1,5 @@
 const CumulativeResult = require("../models/cumulativeResultModel");
+const Class = require("../models/classModel");
 const Student = require("../models/studentModel");
 const Teacher = require("../models/teacherModel");
 const ResultAccess = require("../models/resultAccessModel");
@@ -219,6 +220,18 @@ const uploadCumulativeResult = async (req, res) => {
       session
     );
 
+    const existingResult = await CumulativeResult.findOne({
+      session,
+      class_record,
+      assigned_teacher
+    });
+
+    if (existingResult) {
+      return res.status(409).json({
+        message: "A cumulative result PDF already exists for this class and session"
+      });
+    }
+
     const pdfUpload = await uploadPdfBuffer(req.file.buffer, {
       fileName,
       contentType: req.file.mimetype,
@@ -255,6 +268,160 @@ const uploadCumulativeResult = async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({
+      error: error.message
+    });
+  }
+};
+
+const uploadBulkCumulativeResults = async (req, res) => {
+  try {
+    const { session } = req.body;
+    const files = req.files || [];
+    const entries = JSON.parse(req.body.entries || "[]");
+
+    if (!session) {
+      return res.status(400).json({
+        message: "Session is required"
+      });
+    }
+
+    if (!files.length || !entries.length) {
+      return res.status(400).json({
+        message: "At least one PDF file is required"
+      });
+    }
+
+    if (files.length !== entries.length) {
+      return res.status(400).json({
+        message: "Every bulk cumulative result entry must have one PDF file"
+      });
+    }
+
+    const results = [];
+    const seenClasses = new Set();
+
+    for (let index = 0; index < entries.length; index += 1) {
+      const entry = entries[index] || {};
+      const file = files[index];
+      const label = entry.className || file?.originalname || `File ${index + 1}`;
+      let pdfUpload = null;
+
+      try {
+        if (!entry.class_record || !entry.assigned_teacher || !entry.class) {
+          throw new Error("Class and form teacher are required");
+        }
+
+        const duplicateKey = `${entry.class_record}-${entry.assigned_teacher}-${session}`;
+
+        if (seenClasses.has(duplicateKey)) {
+          throw new Error("This class appears more than once in the bulk upload");
+        }
+
+        seenClasses.add(duplicateKey);
+
+        if (!file || !isPdfBuffer(file.buffer)) {
+          throw new Error("Invalid PDF file");
+        }
+
+        const [selectedClass, teacher] = await Promise.all([
+          Class.findById(entry.class_record),
+          Teacher.findById(entry.assigned_teacher)
+        ]);
+
+        if (!selectedClass || selectedClass.session !== session) {
+          throw new Error("Selected class must belong to the selected session");
+        }
+
+        if (!teacher) {
+          throw new Error("Teacher not found");
+        }
+
+        const teacherClassRecordId = teacher.assigned_class_record?.toString();
+
+        if (
+          teacher.status === "inactive" ||
+          teacher.assignment_type !== "form_teacher" ||
+          teacher.session !== session ||
+          teacherClassRecordId !== entry.class_record
+        ) {
+          throw new Error(
+            "Selected teacher is not the active form teacher for this class and session"
+          );
+        }
+
+        const fileName = createSafeFileName(
+          teacher.assigned_class || entry.class,
+          session
+        );
+
+        const existingResult = await CumulativeResult.findOne({
+          session,
+          class_record: selectedClass._id,
+          assigned_teacher: teacher._id
+        });
+
+        if (existingResult) {
+          throw new Error(
+            "A cumulative result PDF already exists for this class and session"
+          );
+        }
+
+        pdfUpload = await uploadPdfBuffer(file.buffer, {
+          fileName,
+          contentType: file.mimetype,
+          metadata: {
+            type: "cumulative-result",
+            teacher: entry.assigned_teacher,
+            class_record: entry.class_record,
+            session,
+            class: selectedClass.name
+          }
+        });
+
+        const result = await CumulativeResult.create({
+          assigned_teacher: entry.assigned_teacher,
+          class_record: entry.class_record,
+          session,
+          class: selectedClass.name,
+          ...getPdfStorageFields(pdfUpload, {
+            contentType: file.mimetype,
+            fileName
+          })
+        });
+
+        results.push({
+          ok: true,
+          label,
+          result: {
+            ...result.toObject(),
+            pdf_data: undefined
+          }
+        });
+      } catch (error) {
+        await deletePdfFile(pdfUpload);
+        results.push({
+          ok: false,
+          label,
+          message: error.message
+        });
+      }
+    }
+
+    const uploadedCount = results.filter((result) => result.ok).length;
+
+    res.status(uploadedCount === entries.length ? 201 : 207).json({
+      uploadedCount,
+      failedCount: entries.length - uploadedCount,
+      results
+    });
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      return res.status(400).json({
+        message: "Bulk cumulative result entries must be valid JSON"
+      });
+    }
+
+    return res.status(500).json({
       error: error.message
     });
   }
@@ -498,6 +665,7 @@ const downloadCumulativeResult = (req, res) =>
 
 module.exports = {
   uploadCumulativeResult,
+  uploadBulkCumulativeResults,
   getAllCumulativeResults,
   getStudentCumulativeResults,
   getApprovedTeacherCumulativeResults,

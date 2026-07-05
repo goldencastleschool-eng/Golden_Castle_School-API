@@ -4,6 +4,7 @@ const router = express.Router();
 
 const {
   uploadResult,
+  uploadBulkResults,
   getAllResults,
   getResultCount,
   getStudentResults,
@@ -23,6 +24,7 @@ const { invalidateCache } = require("../middleware/cacheMiddleware");
 const upload = require(
   "../middleware/uploadMiddleware"
 );
+const { handleUploadError } = require("../middleware/uploadMiddleware");
 
 router.use(invalidateCache(["reports:overview:", "dashboard:portal-visibility:"]));
 
@@ -49,6 +51,15 @@ router.post(
   authorizeRoles("admin"),
   upload.single("pdf"),
   uploadResult
+);
+
+router.post(
+  "/upload-bulk",
+  protect,
+  authorizeRoles("admin"),
+  upload.array("pdfs", 100),
+  handleUploadError,
+  uploadBulkResults
 );
 
 

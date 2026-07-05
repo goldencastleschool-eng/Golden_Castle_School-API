@@ -5,6 +5,7 @@ const router = express.Router();
 const {
   getClassResults,
   uploadClassResult,
+  uploadBulkClassResults,
   deleteClassResult,
   getApprovedTeacherClassResults,
   viewClassResult,
@@ -28,6 +29,15 @@ router.post(
   upload.single("pdf"),
   handleUploadError,
   uploadClassResult
+);
+
+router.post(
+  "/upload-bulk",
+  protect,
+  authorizeRoles("admin"),
+  upload.array("pdfs", 100),
+  handleUploadError,
+  uploadBulkClassResults
 );
 
 router.get(

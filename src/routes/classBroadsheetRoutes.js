@@ -5,6 +5,7 @@ const router = express.Router();
 const {
   getClassBroadsheets,
   uploadClassBroadsheet,
+  uploadBulkClassBroadsheets,
   deleteClassBroadsheet,
   getApprovedTeacherBroadsheets,
   viewClassBroadsheet,
@@ -28,6 +29,15 @@ router.post(
   upload.single("pdf"),
   handleUploadError,
   uploadClassBroadsheet
+);
+
+router.post(
+  "/upload-bulk",
+  protect,
+  authorizeRoles("admin"),
+  upload.array("pdfs", 100),
+  handleUploadError,
+  uploadBulkClassBroadsheets
 );
 
 router.get(
