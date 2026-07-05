@@ -15,7 +15,7 @@ const createCache = ({
 
   if (
     req.method !== "GET" ||
-    (!cacheAuthorized && (req.headers.authorization || hasAuthCookie))
+    (!cacheAuthorized && hasAuthCookie)
   ) {
     return next();
   }

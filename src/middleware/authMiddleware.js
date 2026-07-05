@@ -15,30 +15,19 @@ const getCookieValue = (cookieHeader = "", cookieName = "") => {
 
 const protect = (req, res, next) => {
   try {
-    const authHeader = req.headers.authorization;
-    const queryToken = req.query?.token;
     const cookieToken = getCookieValue(
       req.headers.cookie,
       process.env.AUTH_COOKIE_NAME || "gcs_auth_token"
     );
 
-    if (
-      (!authHeader || !authHeader.startsWith("Bearer ")) &&
-      !queryToken &&
-      !cookieToken
-    ) {
+    if (!cookieToken) {
       return res.status(401).json({
-        message: "No token provided",
+        message: "No auth session provided",
       });
     }
 
-    const headerToken = authHeader?.startsWith("Bearer ")
-      ? authHeader.split(" ")[1]
-      : "";
-    const token = cookieToken || queryToken || headerToken;
-
     const decoded = jwt.verify(
-      token,
+      cookieToken,
       process.env.JWT_SECRET
     );
 

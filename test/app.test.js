@@ -1,9 +1,11 @@
 const assert = require("node:assert/strict");
 const { after, before, describe, it } = require("node:test");
+const jwt = require("jsonwebtoken");
 
 process.env.JWT_SECRET = process.env.JWT_SECRET || "test-secret";
 
 const app = require("../src/app");
+const protect = require("../src/middleware/authMiddleware");
 const {
   getStudentEffectiveTermEnrollment
 } = require("../src/utils/studentTermEnrollment");
@@ -62,6 +64,66 @@ describe("API health and platform checks", () => {
 
     assert.equal(response.status, 200);
     assert.equal(response.headers.get("access-control-allow-origin"), "http://localhost:5173");
+  });
+});
+
+describe("cookie auth middleware", () => {
+  const createResponse = () => {
+    const response = {
+      statusCode: 200,
+      body: null,
+      status(code) {
+        this.statusCode = code;
+        return this;
+      },
+      json(body) {
+        this.body = body;
+        return this;
+      }
+    };
+
+    return response;
+  };
+
+  it("accepts a valid auth cookie", () => {
+    const token = jwt.sign({ id: "admin-id", role: "admin" }, process.env.JWT_SECRET);
+    const req = {
+      headers: {
+        cookie: `gcs_auth_token=${encodeURIComponent(token)}`
+      }
+    };
+    const res = createResponse();
+    let nextCalled = false;
+
+    protect(req, res, () => {
+      nextCalled = true;
+    });
+
+    assert.equal(nextCalled, true);
+    assert.equal(req.user.id, "admin-id");
+    assert.equal(req.user.role, "admin");
+  });
+
+  it("rejects bearer and query tokens without an auth cookie", () => {
+    const token = jwt.sign({ id: "admin-id", role: "admin" }, process.env.JWT_SECRET);
+    const req = {
+      headers: {
+        authorization: `Bearer ${token}`
+      },
+      query: {
+        token
+      }
+    };
+    const res = createResponse();
+    let nextCalled = false;
+
+    protect(req, res, () => {
+      nextCalled = true;
+    });
+
+    assert.equal(nextCalled, false);
+    assert.equal(res.statusCode, 401);
+    assert.equal(res.body.message, "No auth session provided");
   });
 });
 

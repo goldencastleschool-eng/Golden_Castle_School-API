@@ -49,14 +49,6 @@ const clearAuthCookie = (req, res) => {
   res.clearCookie(AUTH_COOKIE_NAME, cookieOptions);
 };
 
-const withLegacyToken = (payload, token) =>
-  process.env.LEGACY_TOKEN_RESPONSE === "true"
-    ? {
-        ...payload,
-        token,
-      }
-    : payload;
-
 const formatAdminAccount = (admin) => ({
   id: admin._id,
   username: admin.username,
@@ -135,11 +127,9 @@ const adminLogin = async (req, res) => {
     );
     setAuthCookie(req, res, token);
 
-    return res.status(200).json(
-      withLegacyToken({
-        admin: formatAdminAccount(admin),
-      }, token)
-    );
+    return res.status(200).json({
+      admin: formatAdminAccount(admin),
+    });
   } catch (error) {
     return res.status(500).json({
       message: error.message,
@@ -191,11 +181,9 @@ const executiveLogin = async (req, res) => {
     );
     setAuthCookie(req, res, token);
 
-    return res.status(200).json(
-      withLegacyToken({
-        executive: formatExecutiveAccount(executive),
-      }, token)
-    );
+    return res.status(200).json({
+      executive: formatExecutiveAccount(executive),
+    });
   } catch (error) {
     return res.status(500).json({
       message: error.message,
@@ -247,11 +235,9 @@ const studentLogin = async (req, res) => {
     );
     setAuthCookie(req, res, token);
 
-    return res.status(200).json(
-      withLegacyToken({
-        student: formatStudentAccount(student),
-      }, token)
-    );
+    return res.status(200).json({
+      student: formatStudentAccount(student),
+    });
   } catch (error) {
     return res.status(500).json({
       message: error.message,
@@ -308,11 +294,9 @@ const teacherLogin = async (req, res) => {
     const token = generateToken(teacher._id, "teacher");
     setAuthCookie(req, res, token);
 
-    return res.status(200).json(
-      withLegacyToken({
-        teacher: formatTeacherAccount(teacher),
-      }, token)
-    );
+    return res.status(200).json({
+      teacher: formatTeacherAccount(teacher),
+    });
   } catch (error) {
     return res.status(500).json({
       message: error.message,
