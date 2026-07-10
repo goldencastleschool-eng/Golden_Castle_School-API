@@ -4,6 +4,10 @@ const Student = require("../models/studentModel");
 const Teacher = require("../models/teacherModel");
 const ResultAccess = require("../models/resultAccessModel");
 const {
+  getTeacherAssignmentForSession,
+  getTeacherAssignmentForSessionClass
+} = require("../utils/teacherAssignments");
+const {
   deletePdfFile,
   getPdfStorageFields,
   sendPdfFile,
@@ -98,15 +102,22 @@ const enforceCumulativeResultAccess = async (req, result) => {
       key: "active-result-access"
     });
 
-    const teacherClass = normalizeClassName(teacher.assigned_class);
     const resultClass = normalizeClassName(result.class);
-    const teacherClassRecordId = teacher.assigned_class_record?.toString();
     const resultClassRecordId = result.class_record?.toString();
     const resultTeacherId = result.assigned_teacher?.toString();
+    const resultAssignment = resultClassRecordId
+      ? getTeacherAssignmentForSessionClass(teacher, {
+          session: result.session,
+          classRecordId: resultClassRecordId
+        })
+      : getTeacherAssignmentForSession(teacher, {
+          session: result.session
+        });
+    const teacherClass = normalizeClassName(resultAssignment?.assigned_class);
     const belongsToTeacher =
       resultTeacherId && resultClassRecordId
         ? resultTeacherId === teacher._id.toString() &&
-          teacherClassRecordId === resultClassRecordId
+          Boolean(resultAssignment)
         : teacherClass && teacherClass === resultClass;
 
     if (
@@ -202,13 +213,14 @@ const uploadCumulativeResult = async (req, res) => {
       });
     }
 
-    const teacherClassRecordId = teacher.assigned_class_record?.toString();
+    const teacherAssignment = getTeacherAssignmentForSessionClass(teacher, {
+      session,
+      classRecordId: class_record
+    });
 
     if (
       teacher.status === "inactive" ||
-      teacher.assignment_type !== "form_teacher" ||
-      teacher.session !== session ||
-      teacherClassRecordId !== class_record
+      !teacherAssignment
     ) {
       return res.status(400).json({
         message: "Selected teacher is not the active form teacher for this class and session"
@@ -216,7 +228,7 @@ const uploadCumulativeResult = async (req, res) => {
     }
 
     const fileName = createSafeFileName(
-      teacher.assigned_class || studentClass,
+      teacherAssignment.assigned_class || studentClass,
       session
     );
 
@@ -336,13 +348,17 @@ const uploadBulkCumulativeResults = async (req, res) => {
           throw new Error("Teacher not found");
         }
 
-        const teacherClassRecordId = teacher.assigned_class_record?.toString();
+        const teacherAssignment = getTeacherAssignmentForSessionClass(
+          teacher,
+          {
+            session,
+            classRecordId: entry.class_record
+          }
+        );
 
         if (
           teacher.status === "inactive" ||
-          teacher.assignment_type !== "form_teacher" ||
-          teacher.session !== session ||
-          teacherClassRecordId !== entry.class_record
+          !teacherAssignment
         ) {
           throw new Error(
             "Selected teacher is not the active form teacher for this class and session"
@@ -350,7 +366,7 @@ const uploadBulkCumulativeResults = async (req, res) => {
         }
 
         const fileName = createSafeFileName(
-          teacher.assigned_class || entry.class,
+          teacherAssignment.assigned_class || entry.class,
           session
         );
 
@@ -513,7 +529,15 @@ const getApprovedTeacherCumulativeResults = async (req, res) => {
       key: "active-result-access"
     });
 
-    if (!access?.cumulative_session || !teacher.assigned_class) {
+    if (!access?.cumulative_session) {
+      return res.json([]);
+    }
+
+    const teacherAssignment = getTeacherAssignmentForSession(teacher, {
+      session: access.cumulative_session
+    });
+
+    if (!teacherAssignment) {
       return res.json([]);
     }
 
@@ -521,11 +545,11 @@ const getApprovedTeacherCumulativeResults = async (req, res) => {
       session: access.cumulative_session,
       $or: [
         {
-          class_record: teacher.assigned_class_record,
+          class_record: teacherAssignment.assigned_class_record,
           assigned_teacher: teacher._id
         },
         {
-          class: new RegExp(`^${escapeRegex(teacher.assigned_class)}$`, "i")
+          class: new RegExp(`^${escapeRegex(teacherAssignment.assigned_class)}$`, "i")
         }
       ],
       $and: [

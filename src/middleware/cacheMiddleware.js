@@ -12,10 +12,13 @@ const createCache = ({
     .some((cookiePart) =>
       cookiePart.trim().startsWith(`${process.env.AUTH_COOKIE_NAME || "gcs_auth_token"}=`)
     );
+  const hasBearerToken = req.headers.authorization
+    ?.toLowerCase()
+    .startsWith("bearer ");
 
   if (
     req.method !== "GET" ||
-    (!cacheAuthorized && hasAuthCookie)
+    (!cacheAuthorized && (hasAuthCookie || hasBearerToken))
   ) {
     return next();
   }

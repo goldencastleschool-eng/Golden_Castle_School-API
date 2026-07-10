@@ -44,6 +44,88 @@ const getTeacherAssignmentType = (teacher = {}) =>
 const isFormTeacher = (teacher = {}) =>
   getTeacherAssignmentType(teacher) === TEACHER_ASSIGNMENT_TYPES.FORM;
 
+const getRecordId = (record) => {
+  if (!record) {
+    return "";
+  }
+
+  if (record._id) {
+    return record._id.toString();
+  }
+
+  return record.toString();
+};
+
+const buildTeacherAssignment = (assignment = {}) => ({
+  assigned_class: assignment.assigned_class || "",
+  assigned_class_record: assignment.assigned_class_record || null,
+  assignment_type: getTeacherAssignmentType(assignment),
+  session: assignment.session || "",
+  status: assignment.status || "",
+  ended_at: assignment.ended_at || null
+});
+
+const getTeacherAssignments = (teacher = {}) => {
+  teacher = teacher || {};
+  const assignments = [];
+
+  if (teacher.assigned_class_record || teacher.assigned_class || teacher.session) {
+    assignments.push(
+      buildTeacherAssignment({
+        assigned_class: teacher.assigned_class,
+        assigned_class_record: teacher.assigned_class_record,
+        assignment_type: teacher.assignment_type,
+        session: teacher.session,
+        status: teacher.status
+      })
+    );
+  }
+
+  if (Array.isArray(teacher.assignment_history)) {
+    teacher.assignment_history.forEach((assignment) => {
+      assignments.push(buildTeacherAssignment(assignment));
+    });
+  }
+
+  return assignments;
+};
+
+const getTeacherAssignmentForSessionClass = (
+  teacher = {},
+  { session = "", classRecordId = "", assignmentType = TEACHER_ASSIGNMENT_TYPES.FORM } = {}
+) => {
+  const normalizedAssignmentType =
+    normalizeTeacherAssignmentType(assignmentType) ||
+    TEACHER_ASSIGNMENT_TYPES.FORM;
+  const normalizedClassRecordId = getRecordId(classRecordId);
+
+  return getTeacherAssignments(teacher).find((assignment) => {
+    const assignmentClassRecordId = getRecordId(assignment.assigned_class_record);
+
+    return (
+      assignment.session === session &&
+      assignmentClassRecordId === normalizedClassRecordId &&
+      getTeacherAssignmentType(assignment) === normalizedAssignmentType
+    );
+  });
+};
+
+const getTeacherAssignmentForSession = (
+  teacher = {},
+  { session = "", assignmentType = TEACHER_ASSIGNMENT_TYPES.FORM } = {}
+) => {
+  const normalizedAssignmentType =
+    normalizeTeacherAssignmentType(assignmentType) ||
+    TEACHER_ASSIGNMENT_TYPES.FORM;
+
+  return getTeacherAssignments(teacher).find(
+    (assignment) =>
+      assignment.session === session &&
+      getTeacherAssignmentType(assignment) === normalizedAssignmentType &&
+      Boolean(getRecordId(assignment.assigned_class_record))
+  );
+};
+
 const canUseAssignmentTypeForClass = (assignmentType, classRecord) => {
   const normalizedAssignmentType =
     normalizeTeacherAssignmentType(assignmentType) ||
@@ -67,6 +149,9 @@ module.exports = {
   VALID_TEACHER_ASSIGNMENT_TYPES,
   canUseAssignmentTypeForClass,
   formatTeacherAssignmentType,
+  getTeacherAssignmentForSession,
+  getTeacherAssignmentForSessionClass,
+  getTeacherAssignments,
   getTeacherAssignmentType,
   isFormTeacher,
   normalizeTeacherAssignmentType

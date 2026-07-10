@@ -2,7 +2,10 @@ const ClassResult = require("../models/classResultModel");
 const Class = require("../models/classModel");
 const ResultAccess = require("../models/resultAccessModel");
 const Teacher = require("../models/teacherModel");
-const { isFormTeacher } = require("../utils/teacherAssignments");
+const {
+  getTeacherAssignmentForSession,
+  getTeacherAssignmentForSessionClass
+} = require("../utils/teacherAssignments");
 const {
   deletePdfFile,
   getPdfStorageFields,
@@ -94,15 +97,18 @@ const uploadClassResult = async (req, res) => {
     }
 
     const selectedTeacher = await Teacher.findById(assigned_teacher);
-    const teacherClassId = selectedTeacher?.assigned_class_record?.toString();
+    const teacherAssignment = getTeacherAssignmentForSessionClass(
+      selectedTeacher,
+      {
+        session,
+        classRecordId: selectedClass._id
+      }
+    );
 
     if (
       !selectedTeacher ||
       selectedTeacher.status === "inactive" ||
-      !isFormTeacher(selectedTeacher) ||
-      selectedTeacher.session !== session ||
-      !teacherClassId ||
-      teacherClassId !== selectedClass._id.toString()
+      !teacherAssignment
     ) {
       return res.status(400).json({
         message: "Selected form teacher must be assigned to this class/session"
@@ -224,15 +230,18 @@ const uploadBulkClassResults = async (req, res) => {
         }
 
         const selectedTeacher = await Teacher.findById(entry.assigned_teacher);
-        const teacherClassId = selectedTeacher?.assigned_class_record?.toString();
+        const teacherAssignment = getTeacherAssignmentForSessionClass(
+          selectedTeacher,
+          {
+            session,
+            classRecordId: selectedClass._id
+          }
+        );
 
         if (
           !selectedTeacher ||
           selectedTeacher.status === "inactive" ||
-          !isFormTeacher(selectedTeacher) ||
-          selectedTeacher.session !== session ||
-          !teacherClassId ||
-          teacherClassId !== selectedClass._id.toString()
+          !teacherAssignment
         ) {
           throw new Error("Selected form teacher must be assigned to this class/session");
         }
@@ -355,10 +364,18 @@ const getApprovedTeacherClassResults = async (req, res) => {
       return res.json([]);
     }
 
+    const teacherAssignment = getTeacherAssignmentForSession(teacher, {
+      session: access.class_result_session
+    });
+
+    if (!teacherAssignment) {
+      return res.json([]);
+    }
+
     const classResults = await ClassResult.find({
       session: access.class_result_session,
       term: access.class_result_term,
-      class_record: teacher.assigned_class_record,
+      class_record: teacherAssignment.assigned_class_record,
       assigned_teacher: teacher._id,
       ...pdfRecordQuery
     })
@@ -398,10 +415,13 @@ const enforceTeacherClassResultAccess = async (req, classResult) => {
     key: "active-result-access"
   });
 
+  const teacherAssignment = getTeacherAssignmentForSessionClass(teacher, {
+    session: classResult.session,
+    classRecordId: classResult.class_record
+  });
   const belongsToTeacher =
     classResult.assigned_teacher?.toString() === teacher._id.toString() &&
-    teacher.assigned_class_record?.toString() ===
-    classResult.class_record.toString();
+    Boolean(teacherAssignment);
 
   if (
     !belongsToTeacher ||

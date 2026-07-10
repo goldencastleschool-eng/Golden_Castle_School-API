@@ -2,7 +2,10 @@ const ClassBroadsheet = require("../models/classBroadsheetModel");
 const Class = require("../models/classModel");
 const ResultAccess = require("../models/resultAccessModel");
 const Teacher = require("../models/teacherModel");
-const { isFormTeacher } = require("../utils/teacherAssignments");
+const {
+  getTeacherAssignmentForSession,
+  getTeacherAssignmentForSessionClass
+} = require("../utils/teacherAssignments");
 const {
   deletePdfFile,
   getPdfStorageFields,
@@ -86,16 +89,18 @@ const uploadClassBroadsheet = async (req, res) => {
     }
 
     const selectedTeacher = await Teacher.findById(assigned_teacher);
-
-    const teacherClassId = selectedTeacher?.assigned_class_record?.toString();
+    const teacherAssignment = getTeacherAssignmentForSessionClass(
+      selectedTeacher,
+      {
+        session,
+        classRecordId: selectedClass._id
+      }
+    );
 
     if (
       !selectedTeacher ||
       selectedTeacher.status === "inactive" ||
-      !isFormTeacher(selectedTeacher) ||
-      selectedTeacher.session !== session ||
-      !teacherClassId ||
-      teacherClassId !== selectedClass._id.toString()
+      !teacherAssignment
     ) {
       return res.status(400).json({
         message: "Selected form teacher must be assigned to this class/session"
@@ -226,15 +231,18 @@ const uploadBulkClassBroadsheets = async (req, res) => {
         }
 
         const selectedTeacher = await Teacher.findById(entry.assigned_teacher);
-        const teacherClassId = selectedTeacher?.assigned_class_record?.toString();
+        const teacherAssignment = getTeacherAssignmentForSessionClass(
+          selectedTeacher,
+          {
+            session,
+            classRecordId: selectedClass._id
+          }
+        );
 
         if (
           !selectedTeacher ||
           selectedTeacher.status === "inactive" ||
-          !isFormTeacher(selectedTeacher) ||
-          selectedTeacher.session !== session ||
-          !teacherClassId ||
-          teacherClassId !== selectedClass._id.toString()
+          !teacherAssignment
         ) {
           throw new Error("Selected form teacher must be assigned to this class/session");
         }
@@ -359,10 +367,18 @@ const getApprovedTeacherBroadsheets = async (req, res) => {
       return res.json([]);
     }
 
+    const teacherAssignment = getTeacherAssignmentForSession(teacher, {
+      session: access.broadsheet_session
+    });
+
+    if (!teacherAssignment) {
+      return res.json([]);
+    }
+
     const broadsheets = await ClassBroadsheet.find({
       session: access.broadsheet_session,
       term: access.broadsheet_term,
-      class_record: teacher.assigned_class_record,
+      class_record: teacherAssignment.assigned_class_record,
       assigned_teacher: teacher._id,
       $or: [
         { pdf_file_id: { $exists: true } },
@@ -406,10 +422,13 @@ const enforceTeacherBroadsheetAccess = async (req, broadsheet) => {
     key: "active-result-access"
   });
 
+  const teacherAssignment = getTeacherAssignmentForSessionClass(teacher, {
+    session: broadsheet.session,
+    classRecordId: broadsheet.class_record
+  });
   const belongsToTeacher =
     broadsheet.assigned_teacher?.toString() === teacher._id.toString() &&
-    teacher.assigned_class_record?.toString() ===
-    broadsheet.class_record.toString();
+    Boolean(teacherAssignment);
 
   if (
     !belongsToTeacher ||

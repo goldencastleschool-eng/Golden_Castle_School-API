@@ -15,6 +15,10 @@ const {
 const {
   getExpectedFeeSnapshot
 } = require("../src/utils/feeCalculation");
+const {
+  getTeacherAssignmentForSession,
+  getTeacherAssignmentForSessionClass
+} = require("../src/utils/teacherAssignments");
 
 describe("API health and platform checks", () => {
   let server;
@@ -67,7 +71,7 @@ describe("API health and platform checks", () => {
   });
 });
 
-describe("cookie auth middleware", () => {
+describe("auth middleware", () => {
   const createResponse = () => {
     const response = {
       statusCode: 200,
@@ -104,15 +108,28 @@ describe("cookie auth middleware", () => {
     assert.equal(req.user.role, "admin");
   });
 
-  it("rejects bearer and query tokens without an auth cookie", () => {
+  it("accepts a valid bearer token", () => {
     const token = jwt.sign({ id: "admin-id", role: "admin" }, process.env.JWT_SECRET);
     const req = {
       headers: {
         authorization: `Bearer ${token}`
-      },
-      query: {
-        token
       }
+    };
+    const res = createResponse();
+    let nextCalled = false;
+
+    protect(req, res, () => {
+      nextCalled = true;
+    });
+
+    assert.equal(nextCalled, true);
+    assert.equal(req.user.id, "admin-id");
+    assert.equal(req.user.role, "admin");
+  });
+
+  it("rejects requests without an auth cookie or bearer token", () => {
+    const req = {
+      headers: {}
     };
     const res = createResponse();
     let nextCalled = false;
@@ -175,6 +192,39 @@ describe("student fee term enrollment", () => {
     );
 
     assert.equal(laterTermEnrollment.fee_category, "vip");
+  });
+});
+
+describe("teacher assignment history", () => {
+  it("retains old form teacher assignment after reassignment", () => {
+    const teacher = {
+      session: "2026/2027",
+      assigned_class: "Primary 5",
+      assigned_class_record: "new-class-id",
+      assignment_type: "form_teacher",
+      status: "active",
+      assignment_history: [
+        {
+          session: "2025/2026",
+          assigned_class: "Primary 4",
+          assigned_class_record: "old-class-id",
+          assignment_type: "form_teacher",
+          status: "active",
+          ended_at: new Date()
+        }
+      ]
+    };
+
+    const oldAssignment = getTeacherAssignmentForSessionClass(teacher, {
+      session: "2025/2026",
+      classRecordId: "old-class-id"
+    });
+    const currentAssignment = getTeacherAssignmentForSession(teacher, {
+      session: "2026/2027"
+    });
+
+    assert.equal(oldAssignment.assigned_class, "Primary 4");
+    assert.equal(currentAssignment.assigned_class, "Primary 5");
   });
 });
 

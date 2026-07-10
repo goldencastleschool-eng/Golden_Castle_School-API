@@ -128,6 +128,7 @@ const adminLogin = async (req, res) => {
     setAuthCookie(req, res, token);
 
     return res.status(200).json({
+      token,
       admin: formatAdminAccount(admin),
     });
   } catch (error) {
@@ -182,6 +183,7 @@ const executiveLogin = async (req, res) => {
     setAuthCookie(req, res, token);
 
     return res.status(200).json({
+      token,
       executive: formatExecutiveAccount(executive),
     });
   } catch (error) {
@@ -236,6 +238,7 @@ const studentLogin = async (req, res) => {
     setAuthCookie(req, res, token);
 
     return res.status(200).json({
+      token,
       student: formatStudentAccount(student),
     });
   } catch (error) {
@@ -295,6 +298,7 @@ const teacherLogin = async (req, res) => {
     setAuthCookie(req, res, token);
 
     return res.status(200).json({
+      token,
       teacher: formatTeacherAccount(teacher),
     });
   } catch (error) {

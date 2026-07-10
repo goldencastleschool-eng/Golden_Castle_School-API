@@ -13,21 +13,33 @@ const getCookieValue = (cookieHeader = "", cookieName = "") => {
   return cookie ? decodeURIComponent(cookie.split("=").slice(1).join("=")) : "";
 };
 
+const getBearerToken = (authorizationHeader = "") => {
+  const [scheme, token] = authorizationHeader.split(" ");
+
+  if (scheme?.toLowerCase() !== "bearer" || !token) {
+    return "";
+  }
+
+  return token;
+};
+
 const protect = (req, res, next) => {
   try {
     const cookieToken = getCookieValue(
       req.headers.cookie,
       process.env.AUTH_COOKIE_NAME || "gcs_auth_token"
     );
+    const bearerToken = getBearerToken(req.headers.authorization);
+    const token = cookieToken || bearerToken;
 
-    if (!cookieToken) {
+    if (!token) {
       return res.status(401).json({
         message: "No auth session provided",
       });
     }
 
     const decoded = jwt.verify(
-      cookieToken,
+      token,
       process.env.JWT_SECRET
     );
 
