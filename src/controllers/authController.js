@@ -15,40 +15,6 @@ const invalidLoginMessage =
 const missingLoginMessage = (identifierLabel = "username") =>
   `Enter your ${identifierLabel} and password to continue.`;
 
-const AUTH_COOKIE_NAME = process.env.AUTH_COOKIE_NAME || "gcs_auth_token";
-const AUTH_COOKIE_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
-
-const isLocalOrigin = (origin = "") =>
-  origin.includes("localhost") || origin.includes("127.0.0.1");
-
-const getAuthCookieOptions = (req) => {
-  const origin = req?.headers?.origin || "";
-  const isProduction = process.env.NODE_ENV === "production";
-  const isHttpsRequest =
-    req?.secure || req?.headers?.["x-forwarded-proto"] === "https";
-  const isCrossSiteHttps = origin.startsWith("https://") && !isLocalOrigin(origin);
-  const useSecureCrossSiteCookie =
-    isProduction || isHttpsRequest || isCrossSiteHttps;
-
-  return {
-    httpOnly: true,
-    secure: useSecureCrossSiteCookie,
-    sameSite: useSecureCrossSiteCookie ? "none" : "lax",
-    path: "/",
-    maxAge: AUTH_COOKIE_MAX_AGE,
-  };
-};
-
-const setAuthCookie = (req, res, token) => {
-  res.cookie(AUTH_COOKIE_NAME, token, getAuthCookieOptions(req));
-};
-
-const clearAuthCookie = (req, res) => {
-  const { maxAge, ...cookieOptions } = getAuthCookieOptions(req);
-
-  res.clearCookie(AUTH_COOKIE_NAME, cookieOptions);
-};
-
 const formatAdminAccount = (admin) => ({
   id: admin._id,
   username: admin.username,
@@ -125,7 +91,6 @@ const adminLogin = async (req, res) => {
       admin._id,
       admin.role
     );
-    setAuthCookie(req, res, token);
 
     return res.status(200).json({
       token,
@@ -180,7 +145,6 @@ const executiveLogin = async (req, res) => {
       executive._id,
       executive.role
     );
-    setAuthCookie(req, res, token);
 
     return res.status(200).json({
       token,
@@ -235,7 +199,6 @@ const studentLogin = async (req, res) => {
       student._id,
       "student"
     );
-    setAuthCookie(req, res, token);
 
     return res.status(200).json({
       token,
@@ -252,8 +215,6 @@ const studentLogin = async (req, res) => {
 // LOGOUT
 // ======================
 const logout = (req, res) => {
-  clearAuthCookie(req, res);
-
   return res.status(200).json({
     message: "Logged out successfully",
   });
@@ -295,7 +256,6 @@ const teacherLogin = async (req, res) => {
     }
 
     const token = generateToken(teacher._id, "teacher");
-    setAuthCookie(req, res, token);
 
     return res.status(200).json({
       token,
@@ -330,7 +290,6 @@ const getCurrentUser = async (req, res) => {
       }
 
       if (teacher.status === "inactive") {
-        clearAuthCookie(req, res);
         return res.status(403).json({
           message: "This teacher account has been deactivated",
         });
@@ -349,7 +308,6 @@ const getCurrentUser = async (req, res) => {
       }
 
       if (executive.status === "inactive") {
-        clearAuthCookie(req, res);
         return res.status(403).json({
           message: "This executive account has been deactivated",
         });

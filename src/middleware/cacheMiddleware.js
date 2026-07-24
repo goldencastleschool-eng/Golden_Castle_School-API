@@ -7,18 +7,13 @@ const createCache = ({
   cacheAuthorized = false,
   keyGenerator = (req) => `${req.method}:${req.originalUrl}`
 } = {}) => async (req, res, next) => {
-  const hasAuthCookie = req.headers.cookie
-    ?.split(";")
-    .some((cookiePart) =>
-      cookiePart.trim().startsWith(`${process.env.AUTH_COOKIE_NAME || "gcs_auth_token"}=`)
-    );
   const hasBearerToken = req.headers.authorization
     ?.toLowerCase()
     .startsWith("bearer ");
 
   if (
     req.method !== "GET" ||
-    (!cacheAuthorized && (hasAuthCookie || hasBearerToken))
+    (!cacheAuthorized && hasBearerToken)
   ) {
     return next();
   }

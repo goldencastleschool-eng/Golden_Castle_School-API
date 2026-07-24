@@ -26,7 +26,7 @@ const upload = require(
 );
 const { handleUploadError } = require("../middleware/uploadMiddleware");
 
-router.use(invalidateCache(["reports:overview:", "dashboard:portal-visibility:"]));
+router.use(invalidateCache(["reports:overview:", "reports:admin-dashboard:", "dashboard:portal-visibility:"]));
 
 // ADMIN ONLY
 router.get(

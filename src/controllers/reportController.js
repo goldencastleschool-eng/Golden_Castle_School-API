@@ -1,4 +1,6 @@
 const Class = require("../models/classModel");
+const ClassBroadsheet = require("../models/classBroadsheetModel");
+const ClassResult = require("../models/classResultModel");
 const Bus = require("../models/busModel");
 const BusEnrollment = require("../models/busEnrollmentModel");
 const BusFeeStructure = require("../models/busFeeStructureModel");
@@ -13,7 +15,9 @@ const FeeStructure = require("../models/feeStructureModel");
 const PayrollAssignment = require("../models/payrollAssignmentModel");
 const PayrollPayment = require("../models/payrollPaymentModel");
 const PayrollStaff = require("../models/payrollStaffModel");
+const Result = require("../models/resultModel");
 const Student = require("../models/studentModel");
+const Teacher = require("../models/teacherModel");
 const {
   formatBusPaymentCategoryLabel,
   normalizeBusPaymentCategory
@@ -21,6 +25,7 @@ const {
 const {
   getExpectedFeeSnapshot
 } = require("../utils/feeCalculation");
+const { isFormTeacher } = require("../utils/teacherAssignments");
 
 const validTerms = ["First Term", "Second Term", "Third Term"];
 
@@ -857,6 +862,343 @@ const getExecutiveReportOverview = async (req, res) => {
   }
 };
 
+const countUniqueClassRecords = (records = []) =>
+  new Set(
+    records.map((record) => getRecordId(record.class_record) || record.class)
+  ).size;
+
+const buildClassCoverageRows = ({
+  classes,
+  classSummaries,
+  results
+}) => {
+  const uploadedByClass = results.reduce((summary, result) => {
+    const classKey = getRecordId(result.class_record) || normalizeClassName(result.class);
+    const studentId = getRecordId(result.student);
+
+    if (!classKey || !studentId) {
+      return summary;
+    }
+
+    if (!summary.has(classKey)) {
+      summary.set(classKey, new Set());
+    }
+
+    summary.get(classKey).add(studentId);
+    return summary;
+  }, new Map());
+  const totalsByClass = classSummaries.reduce((summary, classSummary) => {
+    summary.set(getRecordId(classSummary.class_record), classSummary.total_students || 0);
+    summary.set(normalizeClassName(classSummary.class), classSummary.total_students || 0);
+    return summary;
+  }, new Map());
+
+  return classes.map((classRecord) => {
+    const classId = getRecordId(classRecord._id);
+    const normalizedClassName = normalizeClassName(classRecord.name);
+    const uploaded =
+      uploadedByClass.get(classId)?.size ||
+      uploadedByClass.get(normalizedClassName)?.size ||
+      0;
+
+    return {
+      id: classId,
+      className: classRecord.name,
+      session: classRecord.session,
+      total: totalsByClass.get(classId) || totalsByClass.get(normalizedClassName) || 0,
+      uploaded
+    };
+  });
+};
+
+const getAdminDashboardSummary = async (req, res) => {
+  try {
+    const availableSessions = await getAvailableSessions();
+    const requestedSession = normalizeValue(req.query.session);
+    const session =
+      requestedSession && availableSessions.includes(requestedSession)
+        ? requestedSession
+        : requestedSession || availableSessions[0] || "";
+    const requestedTerm = normalizeValue(req.query.term);
+    const term = validTerms.includes(requestedTerm)
+      ? requestedTerm
+      : validTerms[0];
+
+    if (!session) {
+      return res.json({
+        selected_session: "",
+        selected_term: term,
+        available_sessions: [],
+        available_terms: validTerms,
+        class_options: [],
+        summary: {},
+        charts: {
+          population: [],
+          gender: [],
+          finance: [],
+          coverage: []
+        },
+        class_coverage: []
+      });
+    }
+
+    const [
+      classes,
+      feeStructures,
+      fees,
+      students,
+      buses,
+      busRoutes,
+      busStructures,
+      busEnrollments,
+      busPayments,
+      boardingHouses,
+      boardingStructures,
+      boardingEnrollments,
+      boardingPayments,
+      payrollStaff,
+      payrollAssignments,
+      payrollPayments,
+      teachers,
+      classBroadsheets,
+      classResults,
+      termResults
+    ] = await Promise.all([
+      Class.find({ session }).sort({ name: 1 }).lean(),
+      FeeStructure.find({ session, term }).lean(),
+      Fee.find({ session, term }).select("student amount fee_category").lean(),
+      Student.find({
+        $or: [
+          { current_session: session },
+          { "fee_enrollments.session": session },
+          { graduation_session: session },
+          { left_session: session }
+        ]
+      })
+        .select(
+          "full_name admission_no class class_record current_session gender status graduation_session left_session left_term fee_enrollments createdAt"
+        )
+        .populate("class_record", "name session")
+        .populate("fee_enrollments.class_record", "name session")
+        .lean(),
+      Bus.find().lean(),
+      BusRoute.find().lean(),
+      BusFeeStructure.find({ session, term }).lean(),
+      BusEnrollment.find({ session, term, status: "active" }).lean(),
+      BusPayment.find({ session, term }).select("enrollment amount").lean(),
+      BoardingHouse.find().lean(),
+      BoardingFeeStructure.find({ session, term }).lean(),
+      BoardingEnrollment.find({ session, term, status: "active" }).lean(),
+      BoardingPayment.find({ session, term }).select("enrollment amount").lean(),
+      PayrollStaff.find().select("status").lean(),
+      PayrollAssignment.find({ session, period: term }).lean(),
+      PayrollPayment.find({ session, period: term }).select("assignment amount").lean(),
+      Teacher.find({ session }).select("session status assignment_type assigned_class_record").lean(),
+      ClassBroadsheet.find({ session, term }).select("class class_record").lean(),
+      ClassResult.find({ session, term }).select("class class_record").lean(),
+      Result.find({ session, term }).select("student class class_record").lean()
+    ]);
+
+    const classesById = new Map(
+      classes.map((classRecord) => [getRecordId(classRecord._id), classRecord])
+    );
+    const structuresByClassAndCategory = new Map(
+      feeStructures.map((feeStructure) => [
+        getStructureKey(
+          getRecordId(feeStructure.class_record),
+          feeStructure.fee_category || "returning"
+        ),
+        feeStructure
+      ])
+    );
+    const feesByStudentId = fees.reduce((feeMap, fee) => {
+      const studentId = getRecordId(fee.student);
+      const feeCategory = fee.fee_category || "returning";
+      const feeKey = `${studentId}|${feeCategory}`;
+
+      feeMap.set(feeKey, (feeMap.get(feeKey) || 0) + Number(fee.amount || 0));
+      return feeMap;
+    }, new Map());
+    const studentRows = buildStudentReportRows({
+      students,
+      classesById,
+      feesByStudentId,
+      structuresByClassAndCategory,
+      session,
+      term,
+      selectedClassId: ""
+    });
+    const classSummaries = buildClassSummaries({
+      classes,
+      studentRows,
+      selectedClassId: ""
+    });
+    const feeCategoryCounts = studentRows.reduce((categoryCounts, student) => {
+      categoryCounts[student.fee_category] =
+        (categoryCounts[student.fee_category] || 0) + 1;
+      return categoryCounts;
+    }, {});
+    const genderCounts = studentRows.reduce((summary, student) => {
+      const gender = student.gender || "Not Set";
+      summary[gender] = (summary[gender] || 0) + 1;
+      return summary;
+    }, {});
+    const newlyAdmitted = feeCategoryCounts.new || 0;
+    const returning = Math.max(studentRows.length - newlyAdmitted, 0);
+    const leftStudents = students.filter(
+      (student) =>
+        student.status === "left" &&
+        (student.left_session || student.current_session) === session &&
+        student.left_term === term
+    ).length;
+    const graduatedStudents = students.filter(
+      (student) =>
+        student.status === "graduated" &&
+        (student.graduation_session || student.current_session) === session
+    ).length;
+    const activeFormTeachers = teachers.filter(
+      (teacher) => teacher.status !== "inactive" && isFormTeacher(teacher)
+    ).length;
+    const inactiveFormTeachers = teachers.filter(
+      (teacher) => teacher.status === "inactive" && isFormTeacher(teacher)
+    ).length;
+    const busSummary = buildBusSummary({
+      buses,
+      routes: busRoutes,
+      structures: busStructures,
+      enrollments: busEnrollments,
+      payments: busPayments
+    });
+    const boardingSummary = buildBoardingSummary({
+      houses: boardingHouses,
+      structures: boardingStructures,
+      enrollments: boardingEnrollments,
+      payments: boardingPayments
+    });
+    const payrollSummary = buildPayrollSummary({
+      staff: payrollStaff,
+      assignments: payrollAssignments,
+      payments: payrollPayments
+    });
+    const feeSummary = {
+      expected: sumRows(studentRows, "expected"),
+      paid: sumRows(studentRows, "paid"),
+      outstanding: sumRows(studentRows, "balance"),
+      outstandingCount: studentRows.filter((student) => student.balance > 0).length,
+      records: fees.length
+    };
+    const classCoverage = buildClassCoverageRows({
+      classes,
+      classSummaries,
+      results: termResults
+    });
+
+    res.json({
+      selected_session: session,
+      selected_term: term,
+      available_sessions: availableSessions,
+      available_terms: validTerms,
+      class_options: classes.map((classRecord) => ({
+        _id: getRecordId(classRecord._id),
+        name: classRecord.name,
+        session: classRecord.session
+      })),
+      summary: {
+        students: {
+          active: studentRows.length,
+          newly_admitted: newlyAdmitted,
+          returning,
+          left: leftStudents,
+          graduated: graduatedStudents,
+          gender_counts: genderCounts,
+          fee_category_counts: feeCategoryCounts
+        },
+        classes: {
+          active: classes.length,
+          broadsheets: countUniqueClassRecords(classBroadsheets),
+          class_results: countUniqueClassRecords(classResults),
+          graduate_list: graduatedStudents
+        },
+        teachers: {
+          active_form: activeFormTeachers,
+          inactive_form: inactiveFormTeachers
+        },
+        fees: feeSummary,
+        bus: {
+          registered_buses: busSummary.registered_buses,
+          routes: busSummary.routes,
+          active_enrollments: busSummary.active_enrollments,
+          expected: busSummary.expected,
+          paid: busSummary.paid,
+          outstanding: busSummary.balance
+        },
+        boarding: {
+          houses: boardingSummary.houses,
+          active_enrollments: boardingSummary.active_enrollments,
+          expected: boardingSummary.expected,
+          paid: boardingSummary.paid,
+          outstanding: boardingSummary.balance
+        },
+        payroll: {
+          active_staff: payrollSummary.active_staff,
+          assigned_staff: payrollSummary.assigned_staff,
+          expected: payrollSummary.expected,
+          paid: payrollSummary.paid,
+          outstanding: payrollSummary.balance
+        }
+      },
+      charts: {
+        population: [
+          { name: "Newly Admitted", value: newlyAdmitted },
+          { name: "Returning", value: returning },
+          { name: "Left", value: leftStudents },
+          { name: "Graduated", value: graduatedStudents }
+        ],
+        gender: Object.entries(genderCounts)
+          .map(([name, value]) => ({ name, value }))
+          .filter((item) => item.value > 0),
+        finance: [
+          {
+            name: "Fees",
+            expected: feeSummary.expected,
+            paid: feeSummary.paid,
+            outstanding: feeSummary.outstanding
+          },
+          {
+            name: "Bus",
+            expected: busSummary.expected,
+            paid: busSummary.paid,
+            outstanding: busSummary.balance
+          },
+          {
+            name: "Boarding",
+            expected: boardingSummary.expected,
+            paid: boardingSummary.paid,
+            outstanding: boardingSummary.balance
+          },
+          {
+            name: "Payroll",
+            expected: payrollSummary.expected,
+            paid: payrollSummary.paid,
+            outstanding: payrollSummary.balance
+          }
+        ],
+        coverage: classCoverage.map((item) => ({
+          name: item.className?.toUpperCase(),
+          uploaded: item.uploaded,
+          missing: Math.max(item.total - item.uploaded, 0)
+        }))
+      },
+      class_coverage: classCoverage
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
-  getExecutiveReportOverview
+  getExecutiveReportOverview,
+  getAdminDashboardSummary
 };

@@ -18,7 +18,7 @@ const { invalidateCache } = require("../middleware/cacheMiddleware");
 const upload = require("../middleware/uploadMiddleware");
 const { handleUploadError } = require("../middleware/uploadMiddleware");
 
-router.use(invalidateCache(["reports:overview:", "dashboard:portal-visibility:"]));
+router.use(invalidateCache(["reports:overview:", "reports:admin-dashboard:", "dashboard:portal-visibility:"]));
 
 router.get("/", protect, authorizeRoles("admin"), getClassBroadsheets);
 

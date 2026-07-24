@@ -110,25 +110,6 @@ describe("auth middleware", () => {
     return response;
   };
 
-  it("accepts a valid auth cookie", () => {
-    const token = jwt.sign({ id: "admin-id", role: "admin" }, process.env.JWT_SECRET);
-    const req = {
-      headers: {
-        cookie: `gcs_auth_token=${encodeURIComponent(token)}`
-      }
-    };
-    const res = createResponse();
-    let nextCalled = false;
-
-    protect(req, res, () => {
-      nextCalled = true;
-    });
-
-    assert.equal(nextCalled, true);
-    assert.equal(req.user.id, "admin-id");
-    assert.equal(req.user.role, "admin");
-  });
-
   it("accepts a valid bearer token", () => {
     const token = jwt.sign({ id: "admin-id", role: "admin" }, process.env.JWT_SECRET);
     const req = {
@@ -148,7 +129,7 @@ describe("auth middleware", () => {
     assert.equal(req.user.role, "admin");
   });
 
-  it("rejects requests without an auth cookie or bearer token", () => {
+  it("rejects requests without a bearer token", () => {
     const req = {
       headers: {}
     };
@@ -161,7 +142,7 @@ describe("auth middleware", () => {
 
     assert.equal(nextCalled, false);
     assert.equal(res.statusCode, 401);
-    assert.equal(res.body.message, "No auth session provided");
+    assert.equal(res.body.message, "No access token provided");
   });
 });
 

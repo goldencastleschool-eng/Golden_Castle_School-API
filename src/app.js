@@ -91,7 +91,6 @@ const corsOptions = {
 
     return callback(new Error("Not allowed by CORS"));
   },
-  credentials: true,
   methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   exposedHeaders: ["X-Total-Count"]
 };

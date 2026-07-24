@@ -29,7 +29,7 @@ const { invalidateCache } = require("../middleware/cacheMiddleware");
 const router = express.Router();
 
 router.use(protect, authorizeRoles("admin"));
-router.use(invalidateCache(["reports:overview:", "dashboard:portal-visibility:"]));
+router.use(invalidateCache(["reports:overview:", "reports:admin-dashboard:", "dashboard:portal-visibility:"]));
 
 router.get("/levels", getLevels);
 router.post("/levels", createLevel);
