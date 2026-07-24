@@ -27,7 +27,11 @@ const payrollRoutes = require("./routes/payrollRoutes");
 const defaultClientOrigins = [
   "http://localhost:5173",
   "http://127.0.0.1:5173",
-  "https://golden-castle-school.vercel.app"
+  "https://golden-castle-school.vercel.app",
+  "https://www.goldencastleschool.com",
+  "https://goldencastleschool.com",
+  "https://portal.goldencastleschool.com",
+  "https://portal.goldencastle.com"
 ];
 
 const clientOrigins = (
