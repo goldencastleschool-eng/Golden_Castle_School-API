@@ -69,6 +69,27 @@ describe("API health and platform checks", () => {
     assert.equal(response.status, 200);
     assert.equal(response.headers.get("access-control-allow-origin"), "http://localhost:5173");
   });
+
+  it("allows production login preflight requests", async () => {
+    const response = await fetch(`${baseUrl}/api/auth/student/login`, {
+      method: "OPTIONS",
+      headers: {
+        Origin: "https://www.goldencastleschool.com",
+        "Access-Control-Request-Method": "POST",
+        "Access-Control-Request-Headers": "content-type,authorization"
+      }
+    });
+
+    assert.equal(response.status, 204);
+    assert.equal(
+      response.headers.get("access-control-allow-origin"),
+      "https://www.goldencastleschool.com"
+    );
+    assert.match(
+      response.headers.get("access-control-allow-methods"),
+      /POST/
+    );
+  });
 });
 
 describe("auth middleware", () => {

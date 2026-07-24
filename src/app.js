@@ -37,11 +37,18 @@ const defaultClientOrigins = [
 const clientOrigins = (
   process.env.CLIENT_URLS ||
   process.env.CLIENT_URL ||
-  defaultClientOrigins.join(",")
+  ""
 )
   .split(",")
   .map((origin) => origin.trim())
   .filter(Boolean);
+
+const allowedClientOrigins = Array.from(
+  new Set([
+    ...defaultClientOrigins,
+    ...clientOrigins
+  ])
+);
 
 const securityHeaders = (req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
@@ -76,17 +83,21 @@ const getServiceStatus = () => {
 
 app.use(securityHeaders);
 app.set("trust proxy", 1);
-app.use(cors({
+const corsOptions = {
   origin: (origin, callback) => {
-    if (!origin || clientOrigins.includes(origin)) {
+    if (!origin || allowedClientOrigins.includes(origin)) {
       return callback(null, true);
     }
 
     return callback(new Error("Not allowed by CORS"));
   },
   credentials: true,
+  methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   exposedHeaders: ["X-Total-Count"]
-}));
+};
+
+app.use(cors(corsOptions));
+app.options(/.*/, cors(corsOptions));
 app.use(express.json({
   limit: "1mb"
 }));
