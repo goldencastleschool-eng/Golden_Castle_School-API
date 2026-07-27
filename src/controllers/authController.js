@@ -48,6 +48,57 @@ const formatTeacherAccount = (teacher) => ({
   role: "teacher",
 });
 
+const legacyAuthCookieNames = [
+  "token",
+  "jwt",
+  "authToken",
+  "auth_token",
+  "accessToken",
+  "access_token",
+  "refreshToken",
+  "refresh_token",
+  "gcs_auth",
+  "gcs_auth_token",
+  "gcs_access_token",
+  "connect.sid",
+];
+
+const getCookieDomainCandidates = (req) => {
+  const hostname = req.hostname || "";
+  const rootDomain = hostname.endsWith("goldencastleschool.com")
+    ? ".goldencastleschool.com"
+    : "";
+
+  return [undefined, hostname, rootDomain].filter(Boolean);
+};
+
+const clearLegacyAuthCookies = (req, res) => {
+  const cookieOptions = {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+  };
+  const paths = ["/", "/api"];
+  const domains = getCookieDomainCandidates(req);
+
+  legacyAuthCookieNames.forEach((name) => {
+    paths.forEach((path) => {
+      res.clearCookie(name, {
+        ...cookieOptions,
+        path,
+      });
+
+      domains.forEach((domain) => {
+        res.clearCookie(name, {
+          ...cookieOptions,
+          path,
+          domain,
+        });
+      });
+    });
+  });
+};
+
 // ======================
 // ADMIN LOGIN
 // ======================
@@ -91,6 +142,8 @@ const adminLogin = async (req, res) => {
       admin._id,
       admin.role
     );
+
+    clearLegacyAuthCookies(req, res);
 
     return res.status(200).json({
       token,
@@ -146,6 +199,8 @@ const executiveLogin = async (req, res) => {
       executive.role
     );
 
+    clearLegacyAuthCookies(req, res);
+
     return res.status(200).json({
       token,
       executive: formatExecutiveAccount(executive),
@@ -200,6 +255,8 @@ const studentLogin = async (req, res) => {
       "student"
     );
 
+    clearLegacyAuthCookies(req, res);
+
     return res.status(200).json({
       token,
       student: formatStudentAccount(student),
@@ -215,6 +272,8 @@ const studentLogin = async (req, res) => {
 // LOGOUT
 // ======================
 const logout = (req, res) => {
+  clearLegacyAuthCookies(req, res);
+
   return res.status(200).json({
     message: "Logged out successfully",
   });
@@ -256,6 +315,8 @@ const teacherLogin = async (req, res) => {
     }
 
     const token = generateToken(teacher._id, "teacher");
+
+    clearLegacyAuthCookies(req, res);
 
     return res.status(200).json({
       token,

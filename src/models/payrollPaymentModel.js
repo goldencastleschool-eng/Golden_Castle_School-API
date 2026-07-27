@@ -107,5 +107,6 @@ const payrollPaymentSchema = new mongoose.Schema(
 payrollPaymentSchema.index({ assignment: 1, payment_date: -1 });
 payrollPaymentSchema.index({ staff: 1, session: 1, period_type: 1, period: 1 });
 payrollPaymentSchema.index({ category: 1, level: 1, session: 1, period: 1 });
+payrollPaymentSchema.index({ session: 1, period: 1, assignment: 1 });
 
 module.exports = mongoose.model("PayrollPayment", payrollPaymentSchema);

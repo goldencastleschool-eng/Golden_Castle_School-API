@@ -28,6 +28,12 @@ const {
 const { isFormTeacher } = require("../utils/teacherAssignments");
 
 const validTerms = ["First Term", "Second Term", "Third Term"];
+const SESSION_CACHE_TTL_MS = 1000 * 60 * 5;
+
+let availableSessionsCache = {
+  expiresAt: 0,
+  sessions: []
+};
 
 const normalizeValue = (value = "") => value.toString().trim();
 
@@ -60,6 +66,10 @@ const sortSessions = (sessions = []) =>
     });
 
 const getAvailableSessions = async () => {
+  if (availableSessionsCache.expiresAt > Date.now()) {
+    return availableSessionsCache.sessions;
+  }
+
   const [
     classSessions,
     studentSessions,
@@ -74,13 +84,20 @@ const getAvailableSessions = async () => {
     FeeStructure.distinct("session")
   ]);
 
-  return sortSessions([
+  const sessions = sortSessions([
     ...classSessions,
     ...studentSessions,
     ...feeEnrollmentSessions,
     ...feeSessions,
     ...feeStructureSessions
   ]);
+
+  availableSessionsCache = {
+    expiresAt: Date.now() + SESSION_CACHE_TTL_MS,
+    sessions
+  };
+
+  return sessions;
 };
 
 const getStudentEnrollment = (student, session, term) => {
@@ -715,7 +732,7 @@ const getExecutiveReportOverview = async (req, res) => {
       payrollAssignments,
       payrollPayments
     ] = await Promise.all([
-      Class.find({ session }).sort({ name: 1 }).lean(),
+      Class.find({ session }).select("name session").sort({ name: 1 }).lean(),
       FeeStructure.find({ session, term }).lean(),
       Fee.find({ session, term }).select("student amount fee_category").lean(),
       Student.find({
@@ -730,17 +747,25 @@ const getExecutiveReportOverview = async (req, res) => {
         .populate("class_record", "name session")
         .populate("fee_enrollments.class_record", "name session")
         .lean(),
-      Bus.find().lean(),
-      BusRoute.find().lean(),
-      BusFeeStructure.find({ session, term }).lean(),
-      BusEnrollment.find({ session, term, status: "active" }).lean(),
+      Bus.find().select("status").lean(),
+      BusRoute.find().select("name").lean(),
+      BusFeeStructure.find({ session, term })
+        .select("route payment_category amount")
+        .lean(),
+      BusEnrollment.find({ session, term, status: "active" })
+        .select("route payment_category")
+        .lean(),
       BusPayment.find({ session, term }).select("enrollment amount").lean(),
-      BoardingHouse.find().lean(),
-      BoardingFeeStructure.find({ session, term }).lean(),
-      BoardingEnrollment.find({ session, term, status: "active" }).lean(),
+      BoardingHouse.find().select("name status").lean(),
+      BoardingFeeStructure.find({ session, term }).select("house amount").lean(),
+      BoardingEnrollment.find({ session, term, status: "active" })
+        .select("house")
+        .lean(),
       BoardingPayment.find({ session, term }).select("enrollment amount").lean(),
       PayrollStaff.find().select("status").lean(),
-      PayrollAssignment.find({ session, period: term }).lean(),
+      PayrollAssignment.find({ session, period: term })
+        .select("category level_name net_amount status")
+        .lean(),
       PayrollPayment.find({ session, period: term }).select("assignment amount").lean()
     ]);
 
@@ -964,7 +989,7 @@ const getAdminDashboardSummary = async (req, res) => {
       classResults,
       termResults
     ] = await Promise.all([
-      Class.find({ session }).sort({ name: 1 }).lean(),
+      Class.find({ session }).select("name session").sort({ name: 1 }).lean(),
       FeeStructure.find({ session, term }).lean(),
       Fee.find({ session, term }).select("student amount fee_category").lean(),
       Student.find({
@@ -981,17 +1006,25 @@ const getAdminDashboardSummary = async (req, res) => {
         .populate("class_record", "name session")
         .populate("fee_enrollments.class_record", "name session")
         .lean(),
-      Bus.find().lean(),
-      BusRoute.find().lean(),
-      BusFeeStructure.find({ session, term }).lean(),
-      BusEnrollment.find({ session, term, status: "active" }).lean(),
+      Bus.find().select("status").lean(),
+      BusRoute.find().select("name").lean(),
+      BusFeeStructure.find({ session, term })
+        .select("route payment_category amount")
+        .lean(),
+      BusEnrollment.find({ session, term, status: "active" })
+        .select("route payment_category")
+        .lean(),
       BusPayment.find({ session, term }).select("enrollment amount").lean(),
-      BoardingHouse.find().lean(),
-      BoardingFeeStructure.find({ session, term }).lean(),
-      BoardingEnrollment.find({ session, term, status: "active" }).lean(),
+      BoardingHouse.find().select("name status").lean(),
+      BoardingFeeStructure.find({ session, term }).select("house amount").lean(),
+      BoardingEnrollment.find({ session, term, status: "active" })
+        .select("house")
+        .lean(),
       BoardingPayment.find({ session, term }).select("enrollment amount").lean(),
       PayrollStaff.find().select("status").lean(),
-      PayrollAssignment.find({ session, period: term }).lean(),
+      PayrollAssignment.find({ session, period: term })
+        .select("category level_name net_amount status")
+        .lean(),
       PayrollPayment.find({ session, period: term }).select("assignment amount").lean(),
       Teacher.find({ session }).select("session status assignment_type assigned_class_record").lean(),
       ClassBroadsheet.find({ session, term }).select("class class_record").lean(),

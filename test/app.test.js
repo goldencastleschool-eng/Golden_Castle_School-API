@@ -90,6 +90,23 @@ describe("API health and platform checks", () => {
       /POST/
     );
   });
+
+  it("allows student subdomain login preflight requests", async () => {
+    const response = await fetch(`${baseUrl}/api/auth/student/login`, {
+      method: "OPTIONS",
+      headers: {
+        Origin: "https://student.goldencastleschool.com",
+        "Access-Control-Request-Method": "POST",
+        "Access-Control-Request-Headers": "content-type,authorization"
+      }
+    });
+
+    assert.equal(response.status, 204);
+    assert.equal(
+      response.headers.get("access-control-allow-origin"),
+      "https://student.goldencastleschool.com"
+    );
+  });
 });
 
 describe("auth middleware", () => {

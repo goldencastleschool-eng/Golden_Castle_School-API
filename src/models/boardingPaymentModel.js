@@ -71,5 +71,6 @@ const boardingPaymentSchema = new mongoose.Schema(
 boardingPaymentSchema.index({ enrollment: 1, payment_date: -1 });
 boardingPaymentSchema.index({ student: 1, session: 1, term: 1 });
 boardingPaymentSchema.index({ house: 1, session: 1, term: 1 });
+boardingPaymentSchema.index({ session: 1, term: 1, enrollment: 1 });
 
 module.exports = mongoose.model("BoardingPayment", boardingPaymentSchema);

@@ -30,6 +30,10 @@ const defaultClientOrigins = [
   "https://golden-castle-school.vercel.app",
   "https://www.goldencastleschool.com",
   "https://goldencastleschool.com",
+  "https://student.goldencastleschool.com",
+  "https://staff.goldencastleschool.com",
+  "https://admin.goldencastleschool.com",
+  "https://executive.goldencastleschool.com",
   "https://portal.goldencastleschool.com",
   "https://portal.goldencastle.com"
 ];

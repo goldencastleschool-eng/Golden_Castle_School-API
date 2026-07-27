@@ -98,5 +98,6 @@ const busPaymentSchema = new mongoose.Schema(
 busPaymentSchema.index({ enrollment: 1, payment_date: -1 });
 busPaymentSchema.index({ student: 1, session: 1, term: 1 });
 busPaymentSchema.index({ route: 1, session: 1, term: 1 });
+busPaymentSchema.index({ session: 1, term: 1, enrollment: 1 });
 
 module.exports = mongoose.model("BusPayment", busPaymentSchema);
