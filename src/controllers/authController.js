@@ -3,6 +3,7 @@ const Admin = require("../models/adminModel");
 const ExecutiveAccount = require("../models/executiveAccountModel");
 const Student = require("../models/studentModel");
 const Teacher = require("../models/teacherModel");
+const AuthActivity = require("../models/authActivityModel");
 const generateToken = require("../utils/generateToken");
 const { getTeacherAssignmentType } = require("../utils/teacherAssignments");
 
@@ -99,6 +100,66 @@ const clearLegacyAuthCookies = (req, res) => {
   });
 };
 
+const getRequestIpAddress = (req) =>
+  req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
+  req.ip ||
+  req.socket?.remoteAddress ||
+  "";
+
+const getAccountActivityDetails = (account, role) => {
+  if (role === "student") {
+    return {
+      display_name: account.full_name || "",
+      identifier: account.admission_no || "",
+    };
+  }
+
+  if (role === "teacher") {
+    return {
+      display_name: account.full_name || "",
+      identifier: account.username || "",
+    };
+  }
+
+  return {
+    display_name: account.username || "",
+    identifier: account.username || "",
+  };
+};
+
+const findAccountForActivity = async ({ id, role }) => {
+  if (role === "student") {
+    return Student.findById(id);
+  }
+
+  if (role === "teacher") {
+    return Teacher.findById(id);
+  }
+
+  if (role === "principal" || role === "chairman") {
+    return ExecutiveAccount.findById(id);
+  }
+
+  return Admin.findById(id);
+};
+
+const recordAuthActivity = async (req, { account, role, action }) => {
+  try {
+    const details = getAccountActivityDetails(account, role);
+
+    await AuthActivity.create({
+      user: account._id,
+      role,
+      action,
+      ...details,
+      ip_address: getRequestIpAddress(req),
+      user_agent: req.get("user-agent") || "",
+    });
+  } catch {
+    // Audit logging should not block a successful authentication flow.
+  }
+};
+
 // ======================
 // ADMIN LOGIN
 // ======================
@@ -144,6 +205,11 @@ const adminLogin = async (req, res) => {
     );
 
     clearLegacyAuthCookies(req, res);
+    await recordAuthActivity(req, {
+      account: admin,
+      role: admin.role,
+      action: "login",
+    });
 
     return res.status(200).json({
       token,
@@ -200,6 +266,11 @@ const executiveLogin = async (req, res) => {
     );
 
     clearLegacyAuthCookies(req, res);
+    await recordAuthActivity(req, {
+      account: executive,
+      role: executive.role,
+      action: "login",
+    });
 
     return res.status(200).json({
       token,
@@ -256,6 +327,11 @@ const studentLogin = async (req, res) => {
     );
 
     clearLegacyAuthCookies(req, res);
+    await recordAuthActivity(req, {
+      account: student,
+      role: "student",
+      action: "login",
+    });
 
     return res.status(200).json({
       token,
@@ -274,9 +350,25 @@ const studentLogin = async (req, res) => {
 const logout = (req, res) => {
   clearLegacyAuthCookies(req, res);
 
-  return res.status(200).json({
-    message: "Logged out successfully",
-  });
+  return findAccountForActivity(req.user)
+    .then(async (account) => {
+      if (account) {
+        await recordAuthActivity(req, {
+          account,
+          role: req.user.role,
+          action: "logout",
+        });
+      }
+
+      return res.status(200).json({
+        message: "Logged out successfully",
+      });
+    })
+    .catch(() =>
+      res.status(200).json({
+        message: "Logged out successfully",
+      })
+    );
 };
 
 const teacherLogin = async (req, res) => {
@@ -317,6 +409,11 @@ const teacherLogin = async (req, res) => {
     const token = generateToken(teacher._id, "teacher");
 
     clearLegacyAuthCookies(req, res);
+    await recordAuthActivity(req, {
+      account: teacher,
+      role: "teacher",
+      action: "login",
+    });
 
     return res.status(200).json({
       token,

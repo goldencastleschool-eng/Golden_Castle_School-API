@@ -41,6 +41,6 @@ router.put(
   changeTeacherPassword
 );
 
-router.post("/logout", logout);
+router.post("/logout", protect, logout);
 
 module.exports = router;

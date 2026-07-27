@@ -9,6 +9,7 @@ const redisStore = require("./utils/upstashRedis");
 const studentRoutes = require("./routes/studentRoutes");
 const classRoutes = require("./routes/classRoutes");
 const authRoutes = require("./routes/authRoutes");
+const authActivityRoutes = require("./routes/authActivityRoutes");
 const resultRoutes = require("./routes/resultRoutes");
 const cumulativeResultRoutes = require("./routes/cumulativeResultRoutes");
 const resultAccessRoutes = require("./routes/resultAccessRoutes");
@@ -135,6 +136,7 @@ app.get("/readyz", (req, res) => {
 app.use('/api/students', studentRoutes);
 app.use('/api/classes', classRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api/auth-activity', authActivityRoutes);
 app.use('/api/results', resultRoutes);
 app.use('/api/cumulative-results', cumulativeResultRoutes);
 app.use('/api/result-access', resultAccessRoutes);
