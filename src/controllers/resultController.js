@@ -660,6 +660,52 @@ const deleteResult = async (req, res) => {
   }
 };
 
+const deleteBatchResults = async (req, res) => {
+  try {
+    const resultIds = Array.isArray(req.body?.resultIds)
+      ? [...new Set(req.body.resultIds.filter(Boolean))]
+      : [];
+
+    if (!resultIds.length) {
+      return res.status(400).json({
+        message: "At least one result is required"
+      });
+    }
+
+    const results = await Result.find({
+      _id: {
+        $in: resultIds
+      }
+    });
+
+    if (!results.length) {
+      return res.status(404).json({
+        message: "No matching results found"
+      });
+    }
+
+    await Result.deleteMany({
+      _id: {
+        $in: results.map((result) => result._id)
+      }
+    });
+
+    await Promise.all(results.map((result) => deletePdfFile(result)));
+
+    res.json({
+      message: "Results deleted successfully",
+      deletedCount: results.length,
+      missingCount: resultIds.length - results.length
+    });
+
+  } catch (error) {
+
+    res.status(500).json({
+      error: error.message
+    });
+  }
+};
+
 const viewResult = (req, res) => sendResultPdf(req, res, "inline");
 
 const downloadResult = (req, res) => sendResultPdf(req, res, "attachment");
@@ -672,6 +718,7 @@ module.exports = {
   getStudentResults,
   updateResult,
   deleteResult,
+  deleteBatchResults,
   viewResult,
   downloadResult
 };

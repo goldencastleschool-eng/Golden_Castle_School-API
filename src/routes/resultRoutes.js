@@ -10,6 +10,7 @@ const {
   getStudentResults,
   updateResult,
   deleteResult,
+  deleteBatchResults,
   viewResult,
   downloadResult
 } = require("../controllers/resultController");
@@ -70,6 +71,15 @@ router.put(
   authorizeRoles("admin"),
   upload.single("pdf"),
   updateResult
+);
+
+
+// ADMIN ONLY
+router.delete(
+  "/batch",
+  protect,
+  authorizeRoles("admin"),
+  deleteBatchResults
 );
 
 
