@@ -67,6 +67,29 @@ const studentSchema = new mongoose.Schema(
       type: String
     },
 
+    class_enrollments: [
+      {
+        session: {
+          type: String,
+          required: true,
+          trim: true
+        },
+        class_record: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Class"
+        },
+        class: {
+          type: String,
+          required: true,
+          trim: true
+        },
+        enrolled_at: {
+          type: Date,
+          default: Date.now
+        }
+      }
+    ],
+
     fee_enrollments: [
       {
         session: {
@@ -123,6 +146,7 @@ const studentSchema = new mongoose.Schema(
 studentSchema.index({ createdAt: -1 });
 studentSchema.index({ current_session: 1, class_record: 1, createdAt: -1 });
 studentSchema.index({ current_session: 1, class: 1, createdAt: -1 });
+studentSchema.index({ "class_enrollments.class_record": 1 });
 studentSchema.index(
   {
     full_name: "text",

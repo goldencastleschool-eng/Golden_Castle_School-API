@@ -208,6 +208,21 @@ const studentBelongsToClassRecord = (student, classRecord) => {
   );
 };
 
+const addClassEnrollment = (student, classRecord) => {
+  const alreadyEnrolled = student.class_enrollments.some(
+    (enrollment) =>
+      enrollment.class_record?.toString() === classRecord._id.toString()
+  );
+
+  if (!alreadyEnrolled) {
+    student.class_enrollments.push({
+      session: classRecord.session,
+      class_record: classRecord._id,
+      class: classRecord.name
+    });
+  }
+};
+
 const registerStudent = async (req, res) => {
   try {
     const {
@@ -265,6 +280,13 @@ const registerStudent = async (req, res) => {
       class: selectedClass.name,
       class_record: selectedClass._id,
       current_session: selectedClass.session,
+      class_enrollments: [
+        {
+          session: selectedClass.session,
+          class_record: selectedClass._id,
+          class: selectedClass.name
+        }
+      ],
       gender,
       password: hashedPassword,
       initial_password: hashedPassword
@@ -316,6 +338,7 @@ const getAllStudents = async (req, res) => {
     const studentsQuery = Student.find(query)
       .select("-password")
       .populate("class_record")
+      .populate("class_enrollments.class_record")
       .populate("fee_enrollments.class_record")
       .sort({
         createdAt: -1
@@ -398,6 +421,10 @@ const updateStudent = async (req, res) => {
     student.class_record = selectedClass?._id || student.class_record;
     student.current_session = selectedClass?.session || student.current_session;
     student.gender = gender || student.gender;
+
+    if (selectedClass) {
+      addClassEnrollment(student, selectedClass);
+    }
 
     if (admission_term || fee_category) {
       const enrollmentError = upsertFeeEnrollment(student, {
@@ -662,6 +689,48 @@ const promoteStudentsByClass = async (req, res) => {
     const promotionStudentIds = promotionStudents.map((student) => student._id);
     const transitionStatus = getTransitionStatus(sourceClass, targetClass);
 
+    if (promotionStudentIds.length > 0) {
+      await Student.updateMany(
+        {
+          _id: { $in: promotionStudentIds },
+          class_enrollments: {
+            $not: {
+              $elemMatch: { class_record: sourceClass._id }
+            }
+          }
+        },
+        {
+          $push: {
+            class_enrollments: {
+              session: sourceClass.session,
+              class_record: sourceClass._id,
+              class: sourceClass.name
+            }
+          }
+        }
+      );
+
+      await Student.updateMany(
+        {
+          _id: { $in: promotionStudentIds },
+          class_enrollments: {
+            $not: {
+              $elemMatch: { class_record: targetClass._id }
+            }
+          }
+        },
+        {
+          $push: {
+            class_enrollments: {
+              session: targetClass.session,
+              class_record: targetClass._id,
+              class: targetClass.name
+            }
+          }
+        }
+      );
+    }
+
     const promotionResult = await Student.updateMany(
       {
         _id: { $in: promotionStudentIds }
@@ -736,7 +805,7 @@ const promoteStudentsByClass = async (req, res) => {
     );
 
     res.json({
-      message: `${promotionResult.modifiedCount} student(s) moved to ${targetClass.name.toUpperCase()} for ${targetClass.session}.`,
+      message: `${promotionResult.modifiedCount} student(s) promoted to ${targetClass.name.toUpperCase()} for ${targetClass.session}. Their source class roster has been preserved.`,
       matchedCount: promotionResult.matchedCount,
       modifiedCount: promotionResult.modifiedCount,
       selectedCount: selectedStudentIds.length,

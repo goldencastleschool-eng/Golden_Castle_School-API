@@ -24,6 +24,8 @@ const reportRoutes = require("./routes/reportRoutes");
 const busManagementRoutes = require("./routes/busManagementRoutes");
 const boardingManagementRoutes = require("./routes/boardingManagementRoutes");
 const payrollRoutes = require("./routes/payrollRoutes");
+const academicContentRoutes = require("./routes/academicContentRoutes");
+const classSchemeRoutes = require("./routes/classSchemeRoutes");
 
 const defaultClientOrigins = [
   "http://localhost:5173",
@@ -151,6 +153,8 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/bus-management', busManagementRoutes);
 app.use('/api/boarding-management', boardingManagementRoutes);
 app.use('/api/payroll', payrollRoutes);
+app.use('/api/academic-content', academicContentRoutes);
+app.use('/api/class-schemes', classSchemeRoutes);
 
 
 module.exports = app;
