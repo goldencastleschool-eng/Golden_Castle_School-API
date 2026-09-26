@@ -19,6 +19,10 @@ const {
   getTeacherAssignmentForSession,
   getTeacherAssignmentForSessionClass
 } = require("../src/utils/teacherAssignments");
+const {
+  formatAdmissionNumber,
+  getSessionEndingYear
+} = require("../src/utils/admissionNumbers");
 
 describe("API health and platform checks", () => {
   let server;
@@ -244,6 +248,19 @@ describe("teacher assignment history", () => {
 
     assert.equal(oldAssignment.assigned_class, "Primary 4");
     assert.equal(currentAssignment.assigned_class, "Primary 5");
+  });
+});
+
+describe("admission number format", () => {
+  it("uses the ending year of a valid academic session", () => {
+    assert.equal(getSessionEndingYear("2026/2027"), "27");
+    assert.equal(formatAdmissionNumber("2026/2027", 1), "GCIS/27/0001");
+    assert.equal(formatAdmissionNumber("2026/2027", 42), "GCIS/27/0042");
+  });
+
+  it("rejects malformed or non-consecutive academic sessions", () => {
+    assert.equal(getSessionEndingYear("2026/2028"), "");
+    assert.equal(formatAdmissionNumber("2026-2027", 1), "");
   });
 });
 

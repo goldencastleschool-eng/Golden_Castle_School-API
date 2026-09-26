@@ -144,9 +144,9 @@ const createTeacher = async (req, res) => {
       password
     } = req.body;
 
-    if (!full_name || !session || !assigned_class_record || !password) {
+    if (!full_name || !session || !password) {
       return res.status(400).json({
-        message: "Full name, session, assigned class, and password are required"
+        message: "Full name, session, and password are required"
       });
     }
 
@@ -156,9 +156,11 @@ const createTeacher = async (req, res) => {
       });
     }
 
-    const selectedClass = await Class.findById(assigned_class_record);
+    const selectedClass = assigned_class_record
+      ? await Class.findById(assigned_class_record)
+      : null;
 
-    if (!selectedClass || selectedClass.session !== session) {
+    if (assigned_class_record && (!selectedClass || selectedClass.session !== session)) {
       return res.status(400).json({
         message: "Assigned class must belong to the selected session"
       });
@@ -172,6 +174,10 @@ const createTeacher = async (req, res) => {
       return res.status(400).json({
         message: requestedAssignment.error
       });
+    }
+
+    if (requestedAssignment.assignmentType !== TEACHER_ASSIGNMENT_TYPES.SUBJECT && !selectedClass) {
+      return res.status(400).json({ message: "Assigned class is required for a form or class teacher" });
     }
 
     const assignmentValidationMessage = validateAssignmentTypeForClass(
@@ -192,8 +198,8 @@ const createTeacher = async (req, res) => {
       full_name,
       username,
       session,
-      assigned_class: selectedClass.name,
-      assigned_class_record: selectedClass._id,
+      assigned_class: selectedClass?.name || "",
+      assigned_class_record: selectedClass?._id || null,
       assignment_type: requestedAssignment.assignmentType,
       password: hashedPassword,
       initial_password: hashedPassword

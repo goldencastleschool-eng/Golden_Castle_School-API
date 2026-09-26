@@ -26,6 +26,9 @@ const boardingManagementRoutes = require("./routes/boardingManagementRoutes");
 const payrollRoutes = require("./routes/payrollRoutes");
 const academicContentRoutes = require("./routes/academicContentRoutes");
 const classSchemeRoutes = require("./routes/classSchemeRoutes");
+const academicSessionRoutes = require("./routes/academicSessionRoutes");
+const admissionApplicationRoutes = require("./routes/admissionApplicationRoutes");
+const subjectScoreRoutes = require("./routes/subjectScoreRoutes");
 
 const defaultClientOrigins = [
   "http://localhost:5173",
@@ -155,6 +158,9 @@ app.use('/api/boarding-management', boardingManagementRoutes);
 app.use('/api/payroll', payrollRoutes);
 app.use('/api/academic-content', academicContentRoutes);
 app.use('/api/class-schemes', classSchemeRoutes);
+app.use('/api/academic-sessions', academicSessionRoutes);
+app.use('/api/admission-applications', admissionApplicationRoutes);
+app.use('/api/subject-scores', subjectScoreRoutes);
 
 
 module.exports = app;

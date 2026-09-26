@@ -25,6 +25,7 @@ const {
 } = require("../utils/feeCategories");
 const { normalizeDiscountAmount } = require("../utils/feeCalculation");
 const { isFormTeacher } = require("../utils/teacherAssignments");
+const { generateAdmissionNumber } = require("../utils/admissionNumbers");
 
 const sanitizeStudent = (student) => {
   const safeStudent = student.toObject
@@ -227,7 +228,6 @@ const registerStudent = async (req, res) => {
   try {
     const {
       full_name,
-      admission_no,
       class: studentClass,
       class_record,
       current_session,
@@ -238,18 +238,6 @@ const registerStudent = async (req, res) => {
       gender,
       password
     } = req.body;
-    const normalizedAdmissionNo = admission_no?.trim();
-
-    const existingStudent = await Student.findOne({
-      admission_no: normalizedAdmissionNo
-    });
-
-    if (existingStudent) {
-      return res.status(400).json({
-        message: "Student already exists"
-      });
-    }
-
     if (!password || password.length < 6) {
       return res.status(400).json({
         message: "Password must be at least 6 characters"
@@ -272,11 +260,22 @@ const registerStudent = async (req, res) => {
       });
     }
 
+    if (
+      normalizeSession(current_session) !== normalizeSession(selectedClass.session)
+    ) {
+      return res.status(400).json({
+        message: "Registration session must match the selected class session"
+      });
+    }
+
     const hashedPassword = await bcrypt.hash(password, 10);
+    const generatedAdmissionNo = await generateAdmissionNumber(
+      selectedClass.session
+    );
 
     const student = new Student({
       full_name,
-      admission_no: normalizedAdmissionNo,
+      admission_no: generatedAdmissionNo,
       class: selectedClass.name,
       class_record: selectedClass._id,
       current_session: selectedClass.session,
@@ -386,15 +385,9 @@ const updateStudent = async (req, res) => {
       normalizedAdmissionNo &&
       normalizedAdmissionNo !== student.admission_no
     ) {
-      const existingStudent = await Student.findOne({
-        admission_no: normalizedAdmissionNo
+      return res.status(400).json({
+        message: "Admission numbers are assigned automatically and cannot be changed"
       });
-
-      if (existingStudent) {
-        return res.status(400).json({
-          message: "Admission number already exists"
-        });
-      }
     }
 
     const previousClass = student.class;
@@ -416,7 +409,6 @@ const updateStudent = async (req, res) => {
     }
 
     student.full_name = full_name || student.full_name;
-    student.admission_no = normalizedAdmissionNo || student.admission_no;
     student.class = selectedClass?.name || student.class;
     student.class_record = selectedClass?._id || student.class_record;
     student.current_session = selectedClass?.session || student.current_session;

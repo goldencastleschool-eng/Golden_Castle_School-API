@@ -3,6 +3,8 @@ const Class = require("../models/classModel");
 const Student = require("../models/studentModel");
 
 const Result = require("../models/resultModel");
+const AcademicSessionSetting = require("../models/academicSessionSettingModel");
+const { getSessionEndingYear } = require("../utils/admissionNumbers");
 
 const {
   ensureClassRecord,
@@ -54,6 +56,12 @@ const createClass = async (req, res) => {
       });
     }
 
+    if (!getSessionEndingYear(session)) {
+      return res.status(400).json({
+        message: "Session must use the format YYYY/YYYY, such as 2026/2027"
+      });
+    }
+
     if (!section) {
       return res.status(400).json({
         message: "Class section is required"
@@ -101,6 +109,12 @@ const updateClass = async (req, res) => {
       });
     }
 
+    if (!getSessionEndingYear(session)) {
+      return res.status(400).json({
+        message: "Session must use the format YYYY/YYYY, such as 2026/2027"
+      });
+    }
+
     if (!section) {
       return res.status(400).json({
         message: "Class section is required"
@@ -127,6 +141,24 @@ const updateClass = async (req, res) => {
       return res.status(400).json({
         message: "Class already exists for this session"
       });
+    }
+
+    if (session !== classRecord.session) {
+      const activeSetting = await AcademicSessionSetting.findOne({
+        key: "active_academic_session"
+      }).lean();
+
+      if (activeSetting?.active_session === classRecord.session) {
+        const classesInActiveSession = await Class.countDocuments({
+          session: classRecord.session
+        });
+
+        if (classesInActiveSession <= 1) {
+          return res.status(400).json({
+            message: "Cannot move the last class out of the active academic session"
+          });
+        }
+      }
     }
 
     const oldName = classRecord.name;
@@ -181,6 +213,22 @@ const deleteClass = async (req, res) => {
       return res.status(404).json({
         message: "Class not found"
       });
+    }
+
+    const activeSetting = await AcademicSessionSetting.findOne({
+      key: "active_academic_session"
+    }).lean();
+
+    if (activeSetting?.active_session === classRecord.session) {
+      const classesInActiveSession = await Class.countDocuments({
+        session: classRecord.session
+      });
+
+      if (classesInActiveSession <= 1) {
+        return res.status(400).json({
+          message: "Cannot delete the last class in the active academic session"
+        });
+      }
     }
 
     const studentCount = await Student.countDocuments({

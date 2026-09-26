@@ -19,6 +19,13 @@ const studentSchema = new mongoose.Schema(
       required: true
     },
 
+    admission_application: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "AdmissionApplication",
+      unique: true,
+      sparse: true
+    },
+
     class_record: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Class"

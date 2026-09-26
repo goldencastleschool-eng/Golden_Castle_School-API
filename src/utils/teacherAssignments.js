@@ -2,12 +2,14 @@ const { isSecondaryClass } = require("./classSections");
 
 const TEACHER_ASSIGNMENT_TYPES = {
   FORM: "form_teacher",
-  CLASS: "class_teacher"
+  CLASS: "class_teacher",
+  SUBJECT: "subject_teacher"
 };
 
 const TEACHER_ASSIGNMENT_LABELS = {
   [TEACHER_ASSIGNMENT_TYPES.FORM]: "Form Teacher",
-  [TEACHER_ASSIGNMENT_TYPES.CLASS]: "Class Teacher"
+  [TEACHER_ASSIGNMENT_TYPES.CLASS]: "Class Teacher",
+  [TEACHER_ASSIGNMENT_TYPES.SUBJECT]: "Subject Teacher"
 };
 
 const VALID_TEACHER_ASSIGNMENT_TYPES = Object.values(
@@ -30,6 +32,10 @@ const normalizeTeacherAssignmentType = (assignmentType = "") => {
 
   if (compactType === "class" || compactType === "classteacher") {
     return TEACHER_ASSIGNMENT_TYPES.CLASS;
+  }
+
+  if (compactType === "subject" || compactType === "subjectteacher") {
+    return TEACHER_ASSIGNMENT_TYPES.SUBJECT;
   }
 
   return VALID_TEACHER_ASSIGNMENT_TYPES.includes(assignmentType)

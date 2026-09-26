@@ -31,7 +31,7 @@ const teacherSchema = new mongoose.Schema(
 
     assignment_type: {
       type: String,
-      enum: ["form_teacher", "class_teacher"],
+      enum: ["form_teacher", "class_teacher", "subject_teacher"],
       default: "form_teacher"
     },
 
@@ -69,7 +69,7 @@ const teacherSchema = new mongoose.Schema(
         },
         assignment_type: {
           type: String,
-          enum: ["form_teacher", "class_teacher"],
+          enum: ["form_teacher", "class_teacher", "subject_teacher"],
           default: "form_teacher"
         },
         session: String,
