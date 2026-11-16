@@ -10,7 +10,7 @@ const authActivitySchema = new mongoose.Schema(
     role: {
       type: String,
       required: true,
-      enum: ["student", "teacher", "admin", "principal", "chairman"],
+      enum: ["student", "teacher", "admin", "bursar", "principal", "chairman"],
       index: true,
     },
     display_name: {

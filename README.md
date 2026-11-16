@@ -11,6 +11,7 @@ npm test
 npm run indexes:report
 npm run indexes:sync
 npm run migrate:pdf-b2
+npm run create:bursar
 npm run upstash:test
 npm run docs
 ```
@@ -23,6 +24,25 @@ Required production variables:
 MONGO_URI=
 JWT_SECRET=
 ```
+
+## Bursar access
+
+Create a bursar account with a unique username and a password of at least eight
+characters, then run the account-creation command:
+
+```env
+BURSAR_USERNAME=
+BURSAR_PASSWORD=
+```
+
+```bash
+npm run create:bursar
+```
+
+The bursar signs in at `/bursar-login`. This role can read fee structures and
+student/enrolment records and create or edit school, bus, and boarding payment
+records. It cannot create, edit, or delete fee structures, students, routes,
+houses, enrolments, or payment records.
 
 Backblaze B2 PDF storage:
 

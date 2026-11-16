@@ -174,7 +174,10 @@ const adminLogin = async (req, res) => {
       });
     }
 
-    const admin = await Admin.findOne({ username: normalizedUsername });
+    const admin = await Admin.findOne({
+      username: normalizedUsername,
+      role: "admin"
+    });
 
     if (!admin) {
       return res.status(401).json({
@@ -190,12 +193,6 @@ const adminLogin = async (req, res) => {
     if (!isMatch) {
       return res.status(401).json({
         message: invalidLoginMessage,
-      });
-    }
-
-    if (admin.role !== "admin") {
-      return res.status(403).json({
-        message: "Use the executive reports login for this account",
       });
     }
 
@@ -219,6 +216,31 @@ const adminLogin = async (req, res) => {
     return res.status(500).json({
       message: error.message,
     });
+  }
+};
+
+const bursarLogin = async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    const normalizedUsername = username?.trim().toLowerCase();
+
+    if (!normalizedUsername || !password) {
+      return res.status(400).json({ message: missingLoginMessage("username") });
+    }
+
+    const bursar = await Admin.findOne({ username: normalizedUsername, role: "bursar" });
+
+    if (!bursar || !(await bcrypt.compare(password, bursar.password))) {
+      return res.status(401).json({ message: invalidLoginMessage });
+    }
+
+    const token = generateToken(bursar._id, bursar.role);
+    clearLegacyAuthCookies(req, res);
+    await recordAuthActivity(req, { account: bursar, role: "bursar", action: "login" });
+
+    return res.status(200).json({ token, bursar: formatAdminAccount(bursar) });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
   }
 };
 
@@ -590,6 +612,7 @@ const changeTeacherPassword = async (req, res) => {
 
 module.exports = {
   adminLogin,
+  bursarLogin,
   executiveLogin,
   studentLogin,
   teacherLogin,

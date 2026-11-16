@@ -28,7 +28,7 @@ router.use(invalidateCache(["reports:overview:", "reports:admin-dashboard:", "da
 router.post("/", protect, authorizeRoles("admin"), registerStudent);
 
 // ONLY ADMIN CAN VIEW ALL STUDENTS
-router.get("/", protect, authorizeRoles("admin"), getAllStudents);
+router.get("/", protect, authorizeRoles("admin", "bursar"), getAllStudents);
 
 // ONLY FORM TEACHERS CAN VIEW THEIR ASSIGNED CLASS LIST
 router.get(

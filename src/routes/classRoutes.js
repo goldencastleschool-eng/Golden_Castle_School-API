@@ -16,7 +16,7 @@ const { invalidateCache } = require("../middleware/cacheMiddleware");
 
 router.use(invalidateCache(["reports:overview:", "reports:admin-dashboard:", "dashboard:portal-visibility:"]));
 
-router.get("/", protect, authorizeRoles("admin"), getClasses);
+router.get("/", protect, authorizeRoles("admin", "bursar"), getClasses);
 
 router.post("/", protect, authorizeRoles("admin"), createClass);
 

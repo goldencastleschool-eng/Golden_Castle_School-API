@@ -552,7 +552,10 @@ const createPayment = async (req, res) => {
       amount: snapshot.amount,
       payment_date: new Date(req.body.payment_date || Date.now()),
       payment_method: normalizeText(req.body.payment_method),
-      note: normalizeText(req.body.note)
+      note: normalizeText(req.body.note),
+      created_by: req.user.id,
+      updated_by: req.user.id,
+      updated_by_role: req.user.role
     });
 
     payment.receipt_no = buildReceiptNumber(payment._id);
@@ -592,6 +595,8 @@ const updatePayment = async (req, res) => {
     payment.payment_date = new Date(req.body.payment_date);
     payment.payment_method = normalizeText(req.body.payment_method);
     payment.note = normalizeText(req.body.note);
+    payment.updated_by = req.user.id;
+    payment.updated_by_role = req.user.role;
     payment.receipt_no = buildReceiptNumber(payment._id);
 
     await payment.save();

@@ -39,6 +39,7 @@ const defaultClientOrigins = [
   "https://student.goldencastleschool.com",
   "https://staff.goldencastleschool.com",
   "https://admin.goldencastleschool.com",
+  "https://bursar.goldencastleschool.com",
   "https://executive.goldencastleschool.com",
   "https://portal.goldencastleschool.com",
   "https://portal.goldencastle.com"

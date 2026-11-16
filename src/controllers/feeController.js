@@ -611,7 +611,10 @@ const createFee = async (req, res) => {
       payment_date: new Date(req.body.payment_date),
       payment_method: req.body.payment_method || "",
       receipt_no: "",
-      note: req.body.note || ""
+      note: req.body.note || "",
+      created_by: req.user.id,
+      updated_by: req.user.id,
+      updated_by_role: req.user.role
     });
 
     fee.receipt_no = buildReceiptNumber(fee._id);
@@ -717,7 +720,10 @@ const createBatchFees = async (req, res) => {
         payment_date: new Date(payment_date),
         payment_method: payment.payment_method || payment_method || "",
         receipt_no: "",
-        note: payment.note || note || ""
+        note: payment.note || note || "",
+        created_by: req.user.id,
+        updated_by: req.user.id,
+        updated_by_role: req.user.role
       });
 
       fee.receipt_no = buildReceiptNumber(fee._id);
@@ -782,6 +788,8 @@ const updateFee = async (req, res) => {
     fee.payment_method = req.body.payment_method || "";
     fee.receipt_no = buildReceiptNumber(fee._id);
     fee.note = req.body.note || "";
+    fee.updated_by = req.user.id;
+    fee.updated_by_role = req.user.role;
 
     await fee.save();
 

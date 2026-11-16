@@ -28,32 +28,32 @@ const { invalidateCache } = require("../middleware/cacheMiddleware");
 
 const router = express.Router();
 
-router.use(protect, authorizeRoles("admin"));
+router.use(protect);
 router.use(invalidateCache(["reports:overview:", "reports:admin-dashboard:", "dashboard:portal-visibility:"]));
 
-router.get("/buses", getBuses);
-router.post("/buses", createBus);
-router.put("/buses/:id", updateBus);
-router.delete("/buses/:id", deleteBus);
+router.get("/buses", authorizeRoles("admin"), getBuses);
+router.post("/buses", authorizeRoles("admin"), createBus);
+router.put("/buses/:id", authorizeRoles("admin"), updateBus);
+router.delete("/buses/:id", authorizeRoles("admin"), deleteBus);
 
-router.get("/routes", getRoutes);
-router.post("/routes", createRoute);
-router.put("/routes/:id", updateRoute);
-router.delete("/routes/:id", deleteRoute);
+router.get("/routes", authorizeRoles("admin"), getRoutes);
+router.post("/routes", authorizeRoles("admin"), createRoute);
+router.put("/routes/:id", authorizeRoles("admin"), updateRoute);
+router.delete("/routes/:id", authorizeRoles("admin"), deleteRoute);
 
-router.get("/fee-structures", getFeeStructures);
-router.post("/fee-structures", createFeeStructure);
-router.put("/fee-structures/:id", updateFeeStructure);
-router.delete("/fee-structures/:id", deleteFeeStructure);
+router.get("/fee-structures", authorizeRoles("admin", "bursar"), getFeeStructures);
+router.post("/fee-structures", authorizeRoles("admin"), createFeeStructure);
+router.put("/fee-structures/:id", authorizeRoles("admin"), updateFeeStructure);
+router.delete("/fee-structures/:id", authorizeRoles("admin"), deleteFeeStructure);
 
-router.get("/enrollments", getEnrollments);
-router.post("/enrollments", createEnrollments);
-router.put("/enrollments/:id", updateEnrollment);
-router.delete("/enrollments/:id", deleteEnrollment);
+router.get("/enrollments", authorizeRoles("admin", "bursar"), getEnrollments);
+router.post("/enrollments", authorizeRoles("admin"), createEnrollments);
+router.put("/enrollments/:id", authorizeRoles("admin"), updateEnrollment);
+router.delete("/enrollments/:id", authorizeRoles("admin"), deleteEnrollment);
 
-router.get("/payments", getPayments);
-router.post("/payments", createPayment);
-router.put("/payments/:id", updatePayment);
-router.delete("/payments/:id", deletePayment);
+router.get("/payments", authorizeRoles("admin", "bursar"), getPayments);
+router.post("/payments", authorizeRoles("admin", "bursar"), createPayment);
+router.put("/payments/:id", authorizeRoles("admin", "bursar"), updatePayment);
+router.delete("/payments/:id", authorizeRoles("admin"), deletePayment);
 
 module.exports = router;

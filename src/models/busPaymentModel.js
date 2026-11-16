@@ -88,6 +88,22 @@ const busPaymentSchema = new mongoose.Schema(
       type: String,
       trim: true,
       default: ""
+    },
+
+    created_by: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Admin"
+    },
+
+    updated_by: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Admin"
+    },
+
+    updated_by_role: {
+      type: String,
+      enum: ["admin", "bursar"],
+      default: "admin"
     }
   },
   {
