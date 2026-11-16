@@ -356,6 +356,36 @@ const getAllStudents = async (req, res) => {
   }
 };
 
+const getNewAdmissions = async (req, res) => {
+  try {
+    const session = req.query.session?.trim();
+    const term = req.query.term;
+
+    if (!session || !validFeeTerms.includes(term)) {
+      return res.status(400).json({
+        message: "A valid session and term are required"
+      });
+    }
+
+    const students = await Student.find({
+      fee_enrollments: {
+        $elemMatch: {
+          session,
+          term,
+          fee_category: "new"
+        }
+      }
+    })
+      .select("full_name admission_no class current_session gender status fee_enrollments createdAt")
+      .populate("fee_enrollments.class_record")
+      .sort({ full_name: 1 });
+
+    res.json(students.map(sanitizeStudent));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
 const updateStudent = async (req, res) => {
   try {
     const {
@@ -1041,6 +1071,7 @@ const markStudentsLeftSchool = async (req, res) => {
 module.exports = {
   registerStudent,
   getAllStudents,
+  getNewAdmissions,
   getTeacherClassStudents,
   getMyPromotionStatus,
   updateStudent,
