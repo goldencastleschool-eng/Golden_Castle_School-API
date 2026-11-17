@@ -1,12 +1,15 @@
 const Fee = require("../models/feeModel");
 const Student = require("../models/studentModel");
 const FeeStructure = require("../models/feeStructureModel");
+const FeeSectionTemplate = require("../models/feeSectionTemplateModel");
+const Class = require("../models/classModel");
 const {
   applyListQueryOptions,
   getListQueryOptions
 } = require("../utils/listQueryOptions");
 const { isFeeExemptCategory } = require("../utils/feeCategories");
 const { getExpectedFeeSnapshot } = require("../utils/feeCalculation");
+const { getFeeSectionForClass } = require("../utils/feeSections");
 
 const populateStudent = {
   path: "student",
@@ -120,6 +123,26 @@ const findFeeStructureForStudentFee = async ({
 
     if (feeStructure) {
       return feeStructure;
+    }
+  }
+
+  const classRecord = await Class.findById(classRecordId).select("name");
+  const section = getFeeSectionForClass(classRecord);
+
+  if (!section) {
+    return null;
+  }
+
+  for (const templateCategory of feeCategories) {
+    const feeTemplate = await FeeSectionTemplate.findOne({
+      section,
+      session,
+      term,
+      fee_category: templateCategory
+    });
+
+    if (feeTemplate) {
+      return feeTemplate;
     }
   }
 
@@ -247,7 +270,7 @@ const buildFeeSnapshot = async (payload, excludedFeeId = "") => {
   if (!feeStructure) {
     return {
       message:
-        "Create a matching payment structure for this class, session, term, and student category before recording payment"
+        "Create a matching class payment structure or section fee template for this session, term, and student category before recording payment"
     };
   }
 
