@@ -598,7 +598,30 @@ const getMyFees = async (req, res) => {
         class_record: student.class_record,
         current_session: student.current_session
       },
-      summaries
+      summaries,
+      // Keep the receipt source independent from calculated fee summaries. A
+      // payment remains printable even when its class structure or enrollment
+      // history has subsequently been changed.
+      payments: studentPayments.map((fee) => ({
+        _id: fee._id,
+        student: fee.student,
+        class_record: fee.class_record,
+        class: fee.class,
+        session: fee.session,
+        term: fee.term,
+        fee_category: fee.fee_category || "returning",
+        expected_amount_at_payment: fee.expected_amount_at_payment || 0,
+        base_expected_amount_at_payment:
+          fee.base_expected_amount_at_payment || 0,
+        discount_amount_at_payment: fee.discount_amount_at_payment || 0,
+        discount_reason_at_payment: fee.discount_reason_at_payment || "",
+        expected_items_at_payment: fee.expected_items_at_payment || [],
+        amount: fee.amount,
+        payment_date: fee.payment_date,
+        payment_method: fee.payment_method,
+        receipt_no: fee.receipt_no || buildReceiptNumber(fee._id),
+        note: fee.note
+      }))
     });
 
   } catch (error) {
