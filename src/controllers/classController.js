@@ -16,6 +16,9 @@ const {
   inferClassSection,
   normalizeClassSection
 } = require("../utils/classSections");
+const { studentBelongsToTermClass } = require("../utils/studentTermEnrollment");
+
+const validTerms = ["First Term", "Second Term", "Third Term"];
 
 const getClasses = async (req, res) => {
   try {
@@ -34,6 +37,58 @@ const getClasses = async (req, res) => {
     res.status(500).json({
       error: error.message
     });
+  }
+};
+
+const getClassRoster = async (req, res) => {
+  try {
+    const session = req.query.session?.trim();
+    const term = req.query.term;
+
+    if (!session || !validTerms.includes(term)) {
+      return res.status(400).json({
+        message: "A valid session and term are required to view a class roster"
+      });
+    }
+
+    const classRecord = await Class.findById(req.params.id).lean();
+
+    if (!classRecord) {
+      return res.status(404).json({ message: "Class not found" });
+    }
+
+    if (classRecord.session !== session) {
+      return res.status(400).json({
+        message: "Selected class does not belong to the requested session"
+      });
+    }
+
+    const candidates = await Student.find({
+      $or: [{ status: "active" }, { status: { $exists: false } }]
+    })
+      .select("full_name admission_no class class_record current_session gender status fee_enrollments createdAt")
+      .populate("fee_enrollments.class_record")
+      .sort({ full_name: 1 })
+      .lean();
+
+    const students = candidates.filter((student) =>
+      studentBelongsToTermClass({
+        student,
+        classRecord,
+        session,
+        term
+      })
+    );
+
+    return res.json({
+      class_record: classRecord,
+      session,
+      term,
+      total: students.length,
+      students
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
   }
 };
 
@@ -267,6 +322,7 @@ const deleteClass = async (req, res) => {
 
 module.exports = {
   getClasses,
+  getClassRoster,
   createClass,
   updateClass,
   deleteClass

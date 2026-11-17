@@ -4,6 +4,7 @@ const router = express.Router();
 
 const {
   getClasses,
+  getClassRoster,
   createClass,
   updateClass,
   deleteClass
@@ -17,6 +18,8 @@ const { invalidateCache } = require("../middleware/cacheMiddleware");
 router.use(invalidateCache(["reports:overview:", "reports:admin-dashboard:", "dashboard:portal-visibility:"]));
 
 router.get("/", protect, authorizeRoles("admin", "bursar"), getClasses);
+
+router.get("/:id/students", protect, authorizeRoles("admin", "bursar"), getClassRoster);
 
 router.post("/", protect, authorizeRoles("admin"), createClass);
 
